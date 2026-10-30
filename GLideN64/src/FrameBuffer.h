@@ -18,26 +18,8 @@ namespace graphics {
 	class ColorBufferReader;
 }
 
-struct FrameBuffer
+struct FrameBufferState
 {
-	FrameBuffer();
-	~FrameBuffer();
-	void init(u32 _address, u16 _format, u16 _size, u16 _width, bool _cfb);
-	void updateEndAddress();
-	void resolveMultisampledTexture(bool _bForce = false);
-	void copyDepthTexture();
-	CachedTexture * getTexture(u32 _t);
-	CachedTexture * getTextureBG();
-	void setBufferClearParams(u32 _fillcolor, s32 _ulx, s32 _uly, s32 _lrx, s32 _lry);
-	void copyRdram();
-	void setDirty();
-	bool isValid(bool _forceCheck) const;
-	bool isAuxiliary() const;
-	CachedTexture * getColorFbTexture();
-	graphics::ObjectHandle getColorFbFbo();
-	const u8 * readPixels(s32 _x0, s32 _y0, u32 _width, u32 _height, u32 _size, bool _sync);
-	void cleanUp();
-
 	u32 m_startAddress = 0;
 	u32 m_endAddress = 0;
 	u32 m_size = 0;
@@ -65,6 +47,40 @@ struct FrameBuffer
 	} m_loadTileOrigin;
 	u32 m_loadType = LOADTYPE_BLOCK;
 
+	std::vector<u8> m_RdramCopy;
+
+protected:
+	struct {
+		u32 fillcolor = 0;
+		s32 ulx = 0;
+		s32 uly = 0;
+		s32 lrx = 0;
+		s32 lry = 0;
+	} m_clearParams;
+
+	mutable u32 m_validityChecked = false;
+};
+
+struct FrameBuffer : FrameBufferState
+{
+	FrameBuffer();
+	~FrameBuffer();
+	void init(u32 _address, u16 _format, u16 _size, u16 _width, bool _cfb);
+	void updateEndAddress();
+	void resolveMultisampledTexture(bool _bForce = false);
+	void copyDepthTexture();
+	CachedTexture * getTexture(u32 _t);
+	CachedTexture * getTextureBG();
+	void setBufferClearParams(u32 _fillcolor, s32 _ulx, s32 _uly, s32 _lrx, s32 _lry);
+	void copyRdram();
+	void setDirty();
+	bool isValid(bool _forceCheck) const;
+	bool isAuxiliary() const;
+	CachedTexture * getColorFbTexture();
+	graphics::ObjectHandle getColorFbFbo();
+	const u8 * readPixels(s32 _x0, s32 _y0, u32 _width, u32 _height, u32 _size, bool _sync);
+	void cleanUp();
+
 	graphics::ObjectHandle m_FBO;
 	CachedTexture *m_pTexture = nullptr;
 
@@ -90,17 +106,8 @@ struct FrameBuffer
 	graphics::ObjectHandle m_copyFBO;
 	CachedTexture * m_pFrameBufferCopyTexture = nullptr;
 
-	std::vector<u8> m_RdramCopy;
 
 private:
-	struct {
-		u32 fillcolor = 0;
-		s32 ulx = 0;
-		s32 uly = 0;
-		s32 lrx = 0;
-		s32 lry = 0;
-	} m_clearParams;
-
 	void _initTexture(u16 _width, u16 _height, u16 _format, u16 _size, CachedTexture *_pTexture);
 	void _setAndAttachTexture(graphics::ObjectHandle _fbo, CachedTexture *_pTexture, u32 _t, bool _multisampling);
 	bool _initSubTexture(u32 _t);
@@ -110,11 +117,11 @@ private:
 	void _initColorFBTexture(int _width);
 	void _destroyColorFBTexure();
 
-	mutable u32 m_validityChecked = false;
 };
 
 class FrameBufferList
 {
+	friend class RendererSnapshot;
 public:
 	void init();
 	void destroy();
@@ -156,6 +163,7 @@ private:
 
 	class OverscanBuffer
 	{
+		friend class RendererSnapshot;
 	public:
 		void init();
 		void destroy();

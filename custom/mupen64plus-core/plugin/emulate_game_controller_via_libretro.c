@@ -69,6 +69,20 @@ struct
     BUTTONS buttons;
 } controller[4];
 
+void egcvip_snapshot_save(uint32_t buttons[4])
+{
+    unsigned i;
+    for (i = 0; i < 4; ++i)
+        buttons[i] = controller[i].buttons.Value;
+}
+
+void egcvip_snapshot_load(const uint32_t buttons[4])
+{
+    unsigned i;
+    for (i = 0; i < 4; ++i)
+        controller[i].buttons.Value = buttons[i];
+}
+
 void inputGetKeys_default( int Control, BUTTONS *Keys );
 typedef void (*get_keys_t)(int, BUTTONS*);
 static get_keys_t getKeys = inputGetKeys_default;

@@ -56,6 +56,8 @@
 #include "device/rcp/pi/pi_controller.h"
 #include "device/pif/pif.h"
 #include "libretro_memory.h"
+#include "runtime_snapshot.h"
+#include "rdp_snapshot.h"
 
 #include "audio_plugin.h"
 
@@ -111,6 +113,15 @@ retro_environment_t environ_cb = NULL;
 retro_environment_t environ_clear_thread_waits_cb = NULL;
 
 struct retro_rumble_interface rumble;
+static struct retro_rumble_interface host_rumble;
+
+static bool RETRO_CALLCONV snapshot_rumble(unsigned port,
+    enum retro_rumble_effect effect, uint16_t strength)
+{
+    if (mupen_snapshot_failed() || mupen_snapshot_speculative())
+        return true;
+    return host_rumble.set_rumble_state(port, effect, strength);
+}
 
 save_memory_data saved_memory;
 
@@ -134,11 +145,16 @@ static unsigned audio_buffer_size   = 2048;
 static unsigned retro_filtering      = 0;
 static bool     first_context_reset  = false;
 static bool     initializing         = true;
+static bool     snapshot_started;
+static bool     emulation_failed;
+static bool     shutdown_requested;
 static bool     load_game_successful = false;
 
 static bool     context_setup_first_init = false;
 
 bool libretro_swap_buffer;
+bool retro_frame_pending;
+static bool snapshot_boundary;
 
 uint32_t *blitter_buf = NULL;
 uint32_t *blitter_buf_lock = NULL;
@@ -483,7 +499,17 @@ static void* EmuThreadFunction(void* param)
     log_cb(RETRO_LOG_DEBUG, CORE_NAME ": [EmuThread] M64CMD_EXECUTE\n");
 
     // Runs until CMD_STOP
-    CoreDoCommand(M64CMD_EXECUTE, 0, NULL);
+    if (CoreDoCommand(M64CMD_EXECUTE, 0, NULL) != M64ERR_SUCCESS &&
+        !(current_rdp_type == RDP_PLUGIN_GLIDEN64 && EnableThreadedRenderer))
+    {
+        /* A coroutine entry must not return. Failed renderer initialization
+         * never reaches a VI, so explicitly return control to the frontend. */
+        emulation_failed = true;
+        shutdown_requested = true;
+        mupen_snapshot_abort();
+        for (;;)
+            co_switch(retro_thread);
+    }
 
     if(current_rdp_type == RDP_PLUGIN_GLIDEN64 && EnableThreadedRenderer)
     {
@@ -510,8 +536,11 @@ static void reinit_gfx_plugin(void)
 
         // On first context init, the ROM is not loaded yet, so defer initialization of the plugin.
         // On context destroy/resets however, just initialize right away.
-        if (!first_context_reset)
-            parallel_init();
+        if (!first_context_reset && !parallel_init())
+        {
+            mupen_snapshot_abort();
+            shutdown_requested = true;
+        }
     }
 #endif
 
@@ -720,6 +749,9 @@ void retro_init(void)
 
     environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &colorMode);
     environ_cb(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &rumble);
+    host_rumble = rumble;
+    if (host_rumble.set_rumble_state)
+        rumble.set_rumble_state = snapshot_rumble;
     if(!(current_rdp_type == RDP_PLUGIN_GLIDEN64 && EnableThreadedRenderer))
     {
         initializing = true;
@@ -731,17 +763,20 @@ void retro_init(void)
     m64p_error ret = CoreStartup(FRONTEND_API_VERSION, ".", ".", NULL, n64DebugCallback, 0, n64StateCallback);
     if(ret && log_cb)
         log_cb(RETRO_LOG_ERROR, CORE_NAME ": failed to initialize core (err=%i)\n", ret);
+    mupen_snapshot_register(environ_cb, CORE_NAME "-rdp-plugin");
 }
 
 void retro_deinit(void)
 {
+    mupen_snapshot_shutdown();
     // Prevent yield to game_thread on unsuccessful context request
     if(load_game_successful)
     {
        if(!(current_rdp_type == RDP_PLUGIN_GLIDEN64 && EnableThreadedRenderer))
        {
            CoreDoCommand(M64CMD_STOP, 0, NULL);
-           co_switch(game_thread); /* Let the core thread finish */
+           if (!emulation_failed)
+               co_switch(game_thread); /* Let the core thread finish */
            CoreDoCommand(M64CMD_ROM_CLOSE, 0, NULL);
        }
     }
@@ -1831,6 +1866,7 @@ static void context_destroy(void)
 {
     if(current_rdp_type == RDP_PLUGIN_GLIDEN64)
     {
+       mupen_snapshot_context_destroy();
        glsm_ctl(GLSM_CTL_STATE_CONTEXT_DESTROY, NULL);
     }
 #ifdef HAVE_PARALLEL_RDP
@@ -1882,6 +1918,10 @@ bool retro_load_game(const struct retro_game_info *game)
 {
     char* gamePath;
     char* newPath;
+
+    snapshot_started = false;
+    emulation_failed = false;
+    shutdown_requested = false;
 
     // Workaround for broken subsystem on static platforms
     // Note: game->path can be NULL if loading from a archive
@@ -2009,6 +2049,7 @@ bool retro_load_game(const struct retro_game_info *game)
 
 void retro_unload_game(void)
 {
+    mupen_snapshot_invalidate();
     if(current_rdp_type == RDP_PLUGIN_GLIDEN64 && EnableThreadedRenderer)
     {
        environ_clear_thread_waits_cb(1, NULL);
@@ -2044,16 +2085,29 @@ void retro_unload_game(void)
 
 void retro_run (void)
 {
+    if (shutdown_requested)
+    {
+        environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, NULL);
+        return;
+    }
+    if (mupen_snapshot_failed())
+        return;
     libretro_swap_buffer = false;
     static bool updated = false;
 
     if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated)
+    {
+       if (!mupen_snapshot_flush_options())
+          return;
+       mupen_snapshot_invalidate();
        update_variables(false);
+    }
 
     if(current_rdp_type == RDP_PLUGIN_GLIDEN64)
     {
        if(EnableThreadedRenderer)
        {
+          mupen_snapshot_begin_frame();
           if(!emuThreadRunning)
           {
              pthread_create(&emuThread, NULL, &EmuThreadFunction, NULL);
@@ -2064,7 +2118,16 @@ void retro_run (void)
        glsm_ctl(GLSM_CTL_STATE_BIND, NULL);
     }
 
-    co_switch(game_thread);
+    do {
+       co_switch(game_thread);
+    } while (current_rdp_type == RDP_PLUGIN_GLIDEN64 && EnableThreadedRenderer &&
+             mupen_snapshot_active() && !snapshot_boundary && !threaded_gl_safe_shutdown);
+
+    if (shutdown_requested)
+    {
+        environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, NULL);
+        return;
+    }
 
     if(current_rdp_type == RDP_PLUGIN_GLIDEN64)
     {
@@ -2080,7 +2143,19 @@ void retro_run (void)
 #ifdef HAVE_THR_AL
        else if(current_rdp_type == RDP_PLUGIN_ANGRYLION)
        {
-          video_cb(prescale, retro_screen_width, retro_screen_height, screen_pitch);
+          const void *pixels = prescale;
+          int av = 3;
+          if (mupen_snapshot_active() &&
+              (!environ_cb(RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) || (av & 1)))
+          {
+             pixels = angrylion_snapshot_frame();
+             if (!pixels)
+             {
+                mupen_snapshot_abort();
+                return;
+             }
+          }
+          video_cb(pixels, retro_screen_width, retro_screen_height, screen_pitch);
        }
 #endif // HAVE_THR_AL
 #ifdef HAVE_PARALLEL_RDP
@@ -2102,11 +2177,19 @@ void retro_run (void)
 
 void retro_reset (void)
 {
+    if (mupen_snapshot_failed())
+    {
+       mupen_snapshot_recover_reset();
+       return;
+    }
+    mupen_snapshot_invalidate();
     CoreDoCommand(M64CMD_RESET, 0, (void*)0);
 }
 
 void *retro_get_memory_data(unsigned type)
 {
+    if (mupen_snapshot_failed())
+        return NULL;
     switch (type)
     {
         case RETRO_MEMORY_SYSTEM_RAM: return g_dev.rdram.dram;
@@ -2119,6 +2202,8 @@ void *retro_get_memory_data(unsigned type)
 
 size_t retro_get_memory_size(unsigned type)
 {
+    if (mupen_snapshot_failed())
+        return 0;
     switch (type)
     {
         case RETRO_MEMORY_SYSTEM_RAM:  return RDRAM_MAX_SIZE;
@@ -2137,6 +2222,13 @@ size_t retro_serialize_size (void)
 
 bool retro_serialize(void *data, size_t size)
 {
+   enum retro_savestate_context context = RETRO_SAVESTATE_CONTEXT_NORMAL;
+   if (mupen_snapshot_failed() || size < retro_serialize_size())
+      return false;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_SAVESTATE_CONTEXT, &context) &&
+       (context == RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_INSTANCE ||
+        context == RETRO_SAVESTATE_CONTEXT_RUNAHEAD_SAME_BINARY))
+      return false;
    if (initializing)
       return false;
 
@@ -2170,6 +2262,8 @@ bool retro_serialize(void *data, size_t size)
 
 bool retro_unserialize(const void *data, size_t size)
 {
+   if (mupen_snapshot_failed() || size < retro_serialize_size())
+      return false;
    if (initializing)
       return false;
 
@@ -2198,12 +2292,17 @@ bool retro_unserialize(const void *data, size_t size)
       glsm_ctl(GLSM_CTL_STATE_UNBIND, NULL);
    }
 
-   return true;
+   if (retro_savestate_result)
+      mupen_snapshot_invalidate();
+   return !!retro_savestate_result;
 }
 
 //Needed to be able to detach controllers for Lylat Wars multiplayer
 //Only sets if controller struct is initialised as addon paks do.
 void retro_set_controller_port_device(unsigned in_port, unsigned device) {
+    if (mupen_snapshot_failed())
+        return;
+    mupen_snapshot_invalidate();
     if (in_port < 4){
         switch(device)
         {
@@ -2233,11 +2332,17 @@ unsigned retro_api_version(void) { return RETRO_API_VERSION; }
 
 void retro_cheat_reset(void)
 {
+    if (mupen_snapshot_failed())
+        return;
+    mupen_snapshot_invalidate();
     cheat_delete_all(&g_cheat_ctx);
 }
 
 void retro_cheat_set(unsigned index, bool enabled, const char* codeLine)
 {
+    if (mupen_snapshot_failed())
+        return;
+    mupen_snapshot_invalidate();
     char name[256];
     m64p_cheat_code mupenCode[256];
     int matchLength=0,partCount=0;
@@ -2279,11 +2384,30 @@ void retro_cheat_set(unsigned index, bool enabled, const char* codeLine)
 
 void retro_return(void)
 {
+    retro_frame_pending = false;
     if(!(current_rdp_type == RDP_PLUGIN_GLIDEN64 && EnableThreadedRenderer))
     {
+       mupen_snapshot_set_boundary(true);
        co_switch(retro_thread);
+       snapshot_boundary = false;
     }
+    else if (mupen_snapshot_active())
+       gln64_thr_gl_snapshot_boundary();
 }
+
+void mupen_snapshot_set_boundary(bool ready)
+{
+    snapshot_boundary = ready;
+    if (ready)
+        snapshot_started = true;
+}
+
+bool mupen_snapshot_ready(void)
+{
+    return snapshot_boundary && load_game_successful && !initializing;
+}
+
+bool mupen_snapshot_initializing(void) { return initializing || !snapshot_started; }
 
 uint32_t get_retro_screen_width()
 {

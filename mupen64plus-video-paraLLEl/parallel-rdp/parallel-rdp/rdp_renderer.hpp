@@ -157,6 +157,7 @@ public:
 	void unlock_command_processing();
 
 private:
+	friend class Snapshot;
 	CommandProcessor &processor;
 	Vulkan::Device *device = nullptr;
 	Vulkan::Buffer *rdram = nullptr;

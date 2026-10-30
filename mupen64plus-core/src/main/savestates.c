@@ -206,16 +206,39 @@ static void savestates_clear_job(void)
 #define PUTDATA(buff, type, value) \
     do { type x = value; PUTARRAY(&x, buff, type, 1); } while(0)
 
+#if defined(__LIBRETRO__) && defined(NEW_DYNAREC)
+/* With unchanged direct mappings, compiled instructions remain valid unless
+ * their guest bytes change. Preserve that cache and invalidate both aliases
+ * of changed pages before replacing memory. TLB restores still rebuild it. */
+static void restore_snapshot_memory(struct r4300_core* cpu, void* live,
+    const void* saved, size_t size, uint32_t physical)
+{
+    size_t offset;
+    for (offset = 0; offset < size; offset += 4096) {
+        if (memcmp((const unsigned char*)live + offset,
+                   (const unsigned char*)saved + offset, 4096) != 0) {
+            invalidate_r4300_cached_code(cpu, 0x80000000u + physical + offset, 4096);
+            invalidate_r4300_cached_code(cpu, 0xa0000000u + physical + offset, 4096);
+        }
+    }
+    memcpy(live, saved, size);
+}
+#endif
+
 #ifndef __LIBRETRO__
 int savestates_load_m64p(struct device* dev, char *filepath)
 #else
-int savestates_load_m64p(struct device* dev, const void *data)
+static int savestates_load_m64p_memory(struct device* dev, const void *data,
+    void *reserved)
 #endif
 {
     unsigned char header[44];
     unsigned int version;
     int i;
     uint32_t FCR31;
+#if defined(__LIBRETRO__) && defined(NEW_DYNAREC)
+    int direct_snapshot = 0;
+#endif
 
     size_t savestateSize;
     unsigned char *savestateData, *curr;
@@ -270,6 +293,7 @@ int savestates_load_m64p(struct device* dev, const void *data)
     if(strncmp((char *)curr, savestate_magic, 8)!=0)
     {
         main_message(M64MSG_STATUS, OSD_BOTTOM_LEFT, "Savestate is not a valid Mupen64plus savestate.");
+        pthread_mutex_unlock(&savestates_lock);
         return 0;
     }
 #endif
@@ -311,7 +335,11 @@ int savestates_load_m64p(struct device* dev, const void *data)
 
     /* Read the rest of the savestate */
     savestateSize = 16788244;
+#ifdef __LIBRETRO__
+    savestateData = curr = reserved ? reserved : malloc(savestateSize);
+#else
     savestateData = curr = (unsigned char *)malloc(savestateSize);
+#endif
     if (savestateData == NULL)
     {
         main_message(M64MSG_STATUS, OSD_BOTTOM_LEFT, "Insufficient memory to load state.");
@@ -513,8 +541,21 @@ int savestates_load_m64p(struct device* dev, const void *data)
     dev->dp.dps_regs[DPS_BUFTEST_ADDR_REG] = GETDATA(curr, uint32_t);
     dev->dp.dps_regs[DPS_BUFTEST_DATA_REG] = GETDATA(curr, uint32_t);
 
-    COPYARRAY(dev->rdram.dram, curr, uint32_t, RDRAM_MAX_SIZE/4);
-    COPYARRAY(dev->sp.mem, curr, uint32_t, SP_MEM_SIZE/4);
+#if defined(__LIBRETRO__) && defined(NEW_DYNAREC)
+    direct_snapshot = reserved && dev->r4300.emumode == EMUMODE_DYNAREC &&
+        !using_tlb && !(using_tlb_data[0] | using_tlb_data[1] |
+                       using_tlb_data[2] | using_tlb_data[3]);
+    if (direct_snapshot) {
+        const void* ram = GETARRAY(curr, uint32_t, RDRAM_MAX_SIZE/4);
+        const void* sp = GETARRAY(curr, uint32_t, SP_MEM_SIZE/4);
+        restore_snapshot_memory(&dev->r4300, dev->rdram.dram, ram, RDRAM_MAX_SIZE, 0);
+        restore_snapshot_memory(&dev->r4300, dev->sp.mem, sp, SP_MEM_SIZE, 0x04000000);
+    } else
+#endif
+    {
+        COPYARRAY(dev->rdram.dram, curr, uint32_t, RDRAM_MAX_SIZE/4);
+        COPYARRAY(dev->sp.mem, curr, uint32_t, SP_MEM_SIZE/4);
+    }
     COPYARRAY(dev->pif.ram, curr, uint8_t, PIF_RAM_SIZE);
 
     dev->cart.use_flashram = GETDATA(curr, int32_t);
@@ -565,7 +606,12 @@ int savestates_load_m64p(struct device* dev, const void *data)
         dev->r4300.cp0.tlb.entries[i].phys_odd = GETDATA(curr, uint32_t);
     }
 
-    savestates_load_set_pc(&dev->r4300, GETDATA(curr, uint32_t));
+#if defined(__LIBRETRO__) && defined(NEW_DYNAREC)
+    if (direct_snapshot)
+        generic_jump_to(&dev->r4300, GETDATA(curr, uint32_t));
+    else
+#endif
+        savestates_load_set_pc(&dev->r4300, GETDATA(curr, uint32_t));
 
     *r4300_cp0_next_interrupt(&dev->r4300.cp0) = GETDATA(curr, uint32_t);
     curr += 4; /* here there used to be next_vi */
@@ -1035,6 +1081,10 @@ int savestates_load_m64p(struct device* dev, const void *data)
         }
     }
 
+#ifdef __LIBRETRO__
+    if (reserved == NULL)
+#endif
+    {
     /* Zilmar-Spec plugin expect a call with control_id = -1 when RAM processing is done */
     if (input.controllerCommand) {
         input.controllerCommand(-1, NULL);
@@ -1045,16 +1095,32 @@ int savestates_load_m64p(struct device* dev, const void *data)
 
     dev->sp.rsp_task_locked = 0;
     dev->r4300.cp0.interrupt_unsafe_state = 0;
+    }
 
     *r4300_cp0_last_addr(&dev->r4300.cp0) = *r4300_pc(&dev->r4300);
 
-    free(savestateData);
+#ifdef __LIBRETRO__
+    if (reserved == NULL)
+#endif
+        free(savestateData);
 
 #ifndef __LIBRETRO__
     main_message(M64MSG_STATUS, OSD_BOTTOM_LEFT, "State loaded from: %s", namefrompath(filepath));
 #endif
     return 1;
 }
+
+#ifdef __LIBRETRO__
+int savestates_load_m64p(struct device* dev, const void *data)
+{
+    return savestates_load_m64p_memory(dev, data, NULL);
+}
+
+int savestates_load_snapshot(struct device* dev, const void *data, void *reserved)
+{
+    return reserved != NULL && savestates_load_m64p_memory(dev, data, reserved);
+}
+#endif
 
 static int savestates_load_pj64(struct device* dev,
                                 char *filepath, void *handle,
@@ -1642,21 +1708,29 @@ static void savestates_save_m64p_work(struct work_struct *work)
 #ifndef __LIBRETRO__
 int savestates_save_m64p(const struct device* dev, char *filepath)
 #else
-int savestates_save_m64p(const struct device* dev, void *data)
+static int savestates_save_m64p_memory(const struct device* dev, void *data,
+    int snapshot)
 #endif
 {
     unsigned char outbuf[4];
     int i;
 
-    char queue[1024];
+    char queue[1024] = {0};
 
     struct savestate_work *save;
+#ifdef __LIBRETRO__
+    struct savestate_work local_save;
+#endif
     char *curr;
 
     /* OK to cast away const qualifier */
     const uint32_t* cp0_regs = r4300_cp0_regs((struct cp0*)&dev->r4300.cp0);
 
+#ifdef __LIBRETRO__
+    save = snapshot ? &local_save : malloc(sizeof(*save));
+#else
     save = malloc(sizeof(*save));
+#endif
     if (!save) {
         main_message(M64MSG_STATUS, OSD_BOTTOM_LEFT, "Insufficient memory to save state.");
         StateChanged(M64CORE_STATE_SAVECOMPLETE, 0);
@@ -1669,17 +1743,27 @@ int savestates_save_m64p(const struct device* dev, void *data)
     save->mempointer = data;
 #endif
 
-    if(autoinc_save_slot)
+    if(autoinc_save_slot
+#ifdef __LIBRETRO__
+        && !snapshot
+#endif
+        )
         savestates_inc_slot();
 
     save_eventqueue_infos(&dev->r4300.cp0, queue);
 
     // Allocate memory for the save state data
     save->size = 16788288 + sizeof(queue) + 4 + 4096;
+#ifdef __LIBRETRO__
+    save->data = curr = snapshot ? data : malloc(save->size);
+#else
     save->data = curr = malloc(save->size);
+#endif
     if (save->data == NULL)
     {
+#ifndef __LIBRETRO__
         free(save->filepath);
+#endif
         free(save);
         main_message(M64MSG_STATUS, OSD_BOTTOM_LEFT, "Insufficient memory to save state.");
         StateChanged(M64CORE_STATE_SAVECOMPLETE, 0);
@@ -2045,11 +2129,27 @@ int savestates_save_m64p(const struct device* dev, void *data)
     PUTDATA(curr, uint64_t, *r4300_cp0_latch((struct cp0*)&dev->r4300.cp0));
     PUTDATA(curr, uint64_t, *r4300_cp2_latch((struct cp2*)&dev->r4300.cp2));
 
+#ifdef __LIBRETRO__
+    if (snapshot)
+        return 1;
+#endif
     init_work(&save->work, savestates_save_m64p_work);
     queue_work(&save->work);
 
     return 1;
 }
+
+#ifdef __LIBRETRO__
+int savestates_save_m64p(const struct device* dev, void *data)
+{
+    return savestates_save_m64p_memory(dev, data, 0);
+}
+
+int savestates_save_snapshot(const struct device* dev, void *data)
+{
+    return data != NULL && savestates_save_m64p_memory(dev, data, 1);
+}
+#endif
 
 static int savestates_save_pj64(const struct device* dev,
                                 char *filepath, void *handle,

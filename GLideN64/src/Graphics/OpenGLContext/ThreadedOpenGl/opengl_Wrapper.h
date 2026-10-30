@@ -19,6 +19,11 @@ namespace opengl {
 	{
     public:
 		static void commandLoop();
+#ifdef __LIBRETRO__
+		static void snapshotBoundary();
+		static void runOnContextThread(void (*callback)(void));
+		friend class SnapshotBoundaryCommand;
+#endif
 	private:
 		static void executeCommand(std::shared_ptr<OpenGlCommand> _command);
 
@@ -164,7 +169,7 @@ namespace opengl {
 		static void wrInvalidateFramebuffer(GLenum target, GLsizei numAttachments, const GLenum *attachments);
 		static void wrBufferStorage(GLenum target, GLsizeiptr size, const void *data, GLbitfield flags);
 		static GLsync wrFenceSync(GLenum condition, GLbitfield flags);
-		static void wrClientWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout);
+		static GLenum wrClientWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout);
 		static void wrDeleteSync(GLsync sync);
 
 		static GLuint wrGetUniformBlockIndex(GLuint program, GLchar *uniformBlockName);

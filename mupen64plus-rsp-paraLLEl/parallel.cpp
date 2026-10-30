@@ -25,6 +25,52 @@ int SP_STATUS_TIMEOUT;
 
 extern "C"
 {
+	struct parallel_rsp_snapshot
+	{
+		uint32_t pc, delay_slot, branch_target;
+		uint32_t scalar[33];
+		RSP::CP2 vector;
+		short status_reads[32];
+		int status_timeout;
+	};
+
+	size_t parallelRSP_snapshot_size(void)
+	{
+		return sizeof(parallel_rsp_snapshot);
+	}
+
+	void parallelRSP_snapshot_save(void *data)
+	{
+		parallel_rsp_snapshot capture{};
+		const auto &state = RSP::cpu.get_state();
+		capture.pc = state.pc;
+		capture.delay_slot = state.has_delay_slot;
+		capture.branch_target = state.branch_target;
+		memcpy(capture.scalar, state.sr, sizeof(state.sr));
+		capture.vector = state.cp2;
+		memcpy(capture.status_reads, RSP::MFC0_count, sizeof(RSP::MFC0_count));
+		capture.status_timeout = RSP::SP_STATUS_TIMEOUT;
+		memcpy(data, &capture, sizeof(capture));
+	}
+
+	void parallelRSP_snapshot_load(const void *data)
+	{
+		/* CP2 requires stronger alignment than an ordinary malloc buffer. */
+		parallel_rsp_snapshot capture;
+		memcpy(&capture, data, sizeof(capture));
+		auto &state = RSP::cpu.get_state();
+		state.pc = capture.pc;
+		state.has_delay_slot = capture.delay_slot;
+		state.branch_target = capture.branch_target;
+		memcpy(state.sr, capture.scalar, sizeof(state.sr));
+		state.cp2 = capture.vector;
+		memcpy(RSP::MFC0_count, capture.status_reads, sizeof(RSP::MFC0_count));
+		RSP::SP_STATUS_TIMEOUT = capture.status_timeout;
+		/* Device restore has already replaced IMEM. Keep only code which still
+		 * matches it; host pointers and the content-keyed code cache stay live. */
+		RSP::cpu.invalidate_imem();
+	}
+
 	// Hack entry point to use when loading savestates when we're tracing.
 	void rsp_clear_registers()
 	{

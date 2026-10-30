@@ -55,7 +55,7 @@ void RDRAMtoColorBuffer::init()
 	initParams.internalFormat = fbTexFormats.colorInternalFormat;
 	initParams.format = fbTexFormats.colorFormat;
 	initParams.dataType = fbTexFormats.colorType;
-	gfxContext.init2DTexture(initParams);
+	gfxContext.initFramebufferTexture(m_pTexture, initParams);
 
 	Context::TexParameters setParams;
 	setParams.handle = m_pTexture->name;

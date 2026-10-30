@@ -112,6 +112,18 @@ void CachedBindBuffer::bind(graphics::Parameter _target, graphics::ObjectHandle 
 		glBindBuffer(GLenum(_target), GLuint(_name));
 }
 
+bool CachedBindBuffer::copy(ObjectHandle _source, ObjectHandle _destination, size_t _size)
+{
+	if (ptrCopyBufferSubData == nullptr || _size > size_t(PTRDIFF_MAX))
+		return false;
+	bind(Parameter(GL_COPY_READ_BUFFER), _source);
+	bind(Parameter(GL_COPY_WRITE_BUFFER), _destination);
+	ptrCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, GLsizeiptr(_size));
+	bind(Parameter(GL_COPY_READ_BUFFER), ObjectHandle::null);
+	bind(Parameter(GL_COPY_WRITE_BUFFER), ObjectHandle::null);
+	return true;
+}
+
 /*---------------CachedBindTexture-------------*/
 
 void CachedBindTexture::bind(Parameter _tmuIndex, Parameter _target, ObjectHandle _name)

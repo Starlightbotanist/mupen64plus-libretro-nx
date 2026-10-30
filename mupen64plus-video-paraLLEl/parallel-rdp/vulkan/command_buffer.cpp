@@ -2559,7 +2559,9 @@ void CommandBuffer::end_threaded_recording()
 		query_pool.end_command_buffer(cmd);
 	}
 
-	if (table.vkEndCommandBuffer(cmd) != VK_SUCCESS)
+	auto result = table.vkEndCommandBuffer(cmd);
+	device->record_error(result);
+	if (result != VK_SUCCESS)
 		LOGE("Failed to end command buffer.\n");
 }
 

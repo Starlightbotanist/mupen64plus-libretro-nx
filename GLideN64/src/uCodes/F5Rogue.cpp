@@ -3,6 +3,7 @@
  * Microcode decoding: olivieryuyu
  */
 
+#include "SnapshotState.h"
 #include <assert.h>
 #include <array>
 #include <algorithm>
@@ -42,8 +43,10 @@
 #define F3DSWRS_MW_FOG_OFFSET		0x0A
 
 static u32 G_SETOTHERMODE_H_EX, G_SETOTHERMODE_L_EX, G_JUMPSWDL;
-static u32 F3DSWRS_ViewportAddress;
-static u32 F3DSWRS_PerspMatrixAddress;
+static struct {
+	u32 viewportAddress, perspMatrixAddress;
+} snapshotState;
+UcodeSnapshotBlock F5Rogue_SnapshotState() { return ucodeSnapshotBlock(snapshotState); }
 
 struct SWRSTriangle
 {
@@ -137,7 +140,7 @@ void F3DSWRS_Mtx(u32 w0, u32 w1)
 {
 	const u32 param = _SHIFTR(w0, 16, 8);
 	if ((param & G_MTX_PROJECTION) != 0)
-		F3DSWRS_PerspMatrixAddress = _SHIFTR(w1, 0, 24);
+		snapshotState.perspMatrixAddress = _SHIFTR(w1, 0, 24);
 	F3D_Mtx(w0, w1);
 }
 
@@ -150,8 +153,8 @@ void F3DSWRS_MoveMem(u32 _w0, u32)
 {
 	switch (_SHIFTR(_w0, 16, 8)) {
 	case F3D_MV_VIEWPORT://G_MV_VIEWPORT:
-		F3DSWRS_ViewportAddress = _SHIFTR((RSP.PC[RSP.PCi] + 8), 0, 24);
-		gSPViewport(F3DSWRS_ViewportAddress);
+		snapshotState.viewportAddress = _SHIFTR((RSP.PC[RSP.PCi] + 8), 0, 24);
+		gSPViewport(snapshotState.viewportAddress);
 		break;
 	case F3DSWRS_MV_TEXSCALE:
 		gSP.textureCoordScale[0] = *(u32*)&RDRAM[RSP.PC[RSP.PCi] + 16];
@@ -1150,10 +1153,10 @@ void F3DSWRS_TexrectGen(u32 _w0, u32 _w1)
 	const bool flip = (_w0 & 1) != 0;
 
 	const u32 w_i = std::max(1U, u32(v.w));
-	const u32 viewport = *(u32*)&RDRAM[F3DSWRS_ViewportAddress];
+	const u32 viewport = *(u32*)&RDRAM[snapshotState.viewportAddress];
 	const u32 viewportX = _SHIFTR(viewport, 17, 15);
 	const u32 viewportY = _SHIFTR(viewport, 1, 15);
-	const u32* const perspMatrix = (u32*)&RDRAM[F3DSWRS_PerspMatrixAddress];
+	const u32* const perspMatrix = (u32*)&RDRAM[snapshotState.perspMatrixAddress];
 	const u32 perspMatrixX = (perspMatrix[0] & 0xFFFF0000) | _SHIFTR(perspMatrix[8], 16, 16);
 	const u32 perspMatrixY = _SHIFTL(perspMatrix[2], 16, 16) | _SHIFTR(perspMatrix[10], 0, 16);
 	u64 param3X = _SHIFTR(params[3], 16, 16);

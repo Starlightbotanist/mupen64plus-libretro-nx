@@ -1,4 +1,5 @@
 #include "Context.h"
+#include "../Textures.h"
 #include "OpenGLContext/opengl_ContextImpl.h"
 
 using namespace graphics;
@@ -6,6 +7,7 @@ using namespace graphics;
 Context gfxContext;
 
 bool Context::Multisampling = false;
+bool Context::CopyImage = false;
 bool Context::BlitFramebuffer = false;
 bool Context::WeakBlitFramebuffer = false;
 bool Context::DepthFramebufferTextures = false;
@@ -32,6 +34,7 @@ void Context::init()
 	m_impl->init();
 	m_fbTexFormats.reset(m_impl->getFramebufferTextureFormats());
 	Multisampling = m_impl->isSupported(SpecialFeatures::Multisampling);
+	CopyImage = m_impl->isSupported(SpecialFeatures::CopyImage);
 	BlitFramebuffer = m_impl->isSupported(SpecialFeatures::BlitFramebuffer);
 	WeakBlitFramebuffer = m_impl->isSupported(SpecialFeatures::WeakBlitFramebuffer);
 	DepthFramebufferTextures = m_impl->isSupported(SpecialFeatures::DepthFramebufferTextures);
@@ -140,6 +143,23 @@ void Context::deleteTexture(ObjectHandle _name)
 void Context::init2DTexture(const InitTextureParams & _params)
 {
 	m_impl->init2DTexture(_params);
+}
+
+void Context::initFramebufferTexture(CachedTexture * _texture, const InitTextureParams & _params)
+{
+	_texture->storage.target = _params.msaaLevel ? u32(textureTarget::TEXTURE_2D_MULTISAMPLE) : u32(_params.target);
+	_texture->storage.samples = _params.msaaLevel;
+	_texture->storage.width = _params.width;
+	_texture->storage.height = _params.height;
+	_texture->storage.format = u32(_params.format);
+	_texture->storage.internalFormat = u32(_params.internalFormat);
+	_texture->storage.dataType = u32(_params.dataType);
+	init2DTexture(_params);
+}
+
+void Context::invalidateState()
+{
+	m_impl->invalidateState();
 }
 
 void Context::update2DTexture(const UpdateTextureDataParams & _params)

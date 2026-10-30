@@ -46,6 +46,11 @@
 
 /* local variables */
 static struct hle_t g_hle;
+
+size_t hle_snapshot_size(void) { return sizeof(g_hle); }
+void hle_snapshot_save(void *data) { memcpy(data, &g_hle, sizeof(g_hle)); }
+void hle_snapshot_load(const void *data) { memcpy(&g_hle, data, sizeof(g_hle)); }
+
 static void (*l_CheckInterrupts)(void) = NULL;
 static void (*l_ProcessDlistList)(void) = NULL;
 static void (*l_ProcessAlistList)(void) = NULL;

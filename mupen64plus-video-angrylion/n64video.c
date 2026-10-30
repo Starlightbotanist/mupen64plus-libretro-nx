@@ -97,6 +97,9 @@ static struct
 } onetimewarnings;
 
 static int rdp_pipeline_crashed = 0;
+static bool snapshot_ready;
+static void *snapshot_presented;
+static uint64_t snapshot_generation;
 
 static STRICTINLINE int32_t clamp(int32_t value, int32_t min, int32_t max)
 {
@@ -138,10 +141,16 @@ static void cmd_flush(void)
 {
     // only run if there's something buffered
     if (rdp_cmd_buf_pos) {
+        uint32_t partial[CMD_MAX_INTS];
+        bool have_partial = rdp_cmd_pos && rdp_cmd_pos < rdp_cmd_len;
+        if (have_partial)
+            memcpy(partial, rdp_cmd_buf[rdp_cmd_buf_pos], rdp_cmd_pos * sizeof(uint32_t));
         // let workers run all buffered commands in parallel
         parallel_run(cmd_run_buffered);
         // reset buffer by starting from the beginning
         rdp_cmd_buf_pos = 0;
+        if (have_partial)
+            memcpy(rdp_cmd_buf[0], partial, rdp_cmd_pos * sizeof(uint32_t));
     }
 }
 
@@ -150,6 +159,20 @@ static void cmd_init(void)
     rdp_cmd_pos = 0;
     rdp_cmd_id = 0;
     rdp_cmd_len = CMD_MAX_INTS;
+}
+
+static void cmd_set_sync(void)
+{
+    memset(rdp_cmd_sync, 0, sizeof(rdp_cmd_sync));
+    switch (config.dp.compat) {
+        case DP_COMPAT_HIGH:
+            rdp_cmd_sync[CMD_ID_SET_TEXTURE_IMAGE] = true;
+        case DP_COMPAT_MEDIUM:
+            rdp_cmd_sync[CMD_ID_SET_MASK_IMAGE] = true;
+            rdp_cmd_sync[CMD_ID_SET_COLOR_IMAGE] = true;
+        case DP_COMPAT_LOW:
+            rdp_cmd_sync[CMD_ID_SYNC_FULL] = true;
+    }
 }
 
 void n64video_config_init(struct n64video_config* config)
@@ -191,16 +214,7 @@ void n64video_init(struct n64video_config* xconfig)
     }
 
     // enable sync switches depending on compatibility mode
-    memset(rdp_cmd_sync, 0, sizeof(rdp_cmd_sync));
-    switch (config.dp.compat) {
-        case DP_COMPAT_HIGH:
-            rdp_cmd_sync[CMD_ID_SET_TEXTURE_IMAGE] = true;
-        case DP_COMPAT_MEDIUM:
-            rdp_cmd_sync[CMD_ID_SET_MASK_IMAGE] = true;
-            rdp_cmd_sync[CMD_ID_SET_COLOR_IMAGE] = true;
-        case DP_COMPAT_LOW:
-            rdp_cmd_sync[CMD_ID_SYNC_FULL] = true;
-    }
+    cmd_set_sync();
 
     // init internals
     rdram_init();
@@ -225,6 +239,38 @@ void n64video_init(struct n64video_config* xconfig)
     }
     else
         rdp_init(0, 1);
+
+    ++snapshot_generation;
+    snapshot_ready = true;
+}
+
+bool n64video_update_config(struct n64video_config* xconfig)
+{
+    uint32_t old_count, count, i;
+    if (!snapshot_ready)
+        return false;
+    cmd_flush();
+    old_count = config.parallel ? parallel_num_workers() : 1;
+    if (xconfig->parallel && (!config.parallel || xconfig->num_workers != config.num_workers)) {
+        if (!parallel_reconfigure(xconfig->num_workers)) {
+            *xconfig = config;
+            return false;
+        }
+    } else if (!xconfig->parallel && config.parallel)
+        parallel_close();
+    config = *xconfig;
+    count = config.parallel ? parallel_num_workers() : 1;
+    for (i = old_count; i < count; i++) {
+        copy_worker(i);
+        state[i].rseed = state[0].rseed + i * 13;
+    }
+    for (i = 0; i < count; i++) {
+        state[i].stride = count;
+        state[i].offset = i;
+    }
+    cmd_set_sync();
+    ++snapshot_generation;
+    return true;
 }
 
 void n64video_process_list(void)
@@ -258,7 +304,7 @@ void n64video_process_list(void)
         }
 
         // copy more data from the N64 to the local command buffer
-        toload = MIN(dp_end_al - dp_current_al, rdp_cmd_len - 1);
+        toload = MIN(dp_end_al - dp_current_al, rdp_cmd_len - rdp_cmd_pos);
 
         if (xbus_dma) {
             for (i = 0; i < toload; i++) {
@@ -311,6 +357,13 @@ void n64video_process_list(void)
 
 void n64video_close(void)
 {
+    if (snapshot_ready)
+        cmd_flush();
+    snapshot_ready = false;
+    free(snapshot_presented);
+    snapshot_presented = NULL;
     vi_close();
     parallel_close();
 }
+
+#include "n64video/snapshot.c"

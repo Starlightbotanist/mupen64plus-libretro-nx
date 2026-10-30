@@ -35,6 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <runtime_snapshot.h>
 
 #ifdef __APPLE__
 #include <AudioToolbox/AudioToolbox.h>
@@ -234,7 +235,7 @@ void init_audio_libretro(unsigned max_audio_frames)
 #endif
 }
 
-static void aiDacrateChanged(void *user_data, unsigned int frequency)
+static void update_frequency(unsigned int frequency)
 {
    GameFreq        = frequency;
    BytesPerSecond  = frequency * 4;
@@ -244,6 +245,15 @@ static void aiDacrateChanged(void *user_data, unsigned int frequency)
 #if 0
    printf("CountsPerByte: %d, GameFreq: %d\n", CountsPerByte, GameFreq);
 #endif
+}
+
+unsigned mupen_snapshot_audio_frequency(void) { return GameFreq; }
+void mupen_snapshot_restore_audio_frequency(unsigned frequency) { update_frequency(frequency); }
+
+static void aiDacrateChanged(void *user_data, unsigned int frequency)
+{
+   if (!mupen_snapshot_failed())
+      update_frequency(frequency);
 }
 
 /* A fully compliant implementation is not really possible with just the zilmar spec.
@@ -266,22 +276,12 @@ void set_audio_format_via_libretro(void* user_data,
 
 static void aiLenChanged(void* user_data, const void* buffer, size_t size)
 {
-   uint32_t i;
+   if (mupen_snapshot_failed() || mupen_snapshot_speculative())
+      return;
+   size_t i;
    int16_t *out      = NULL;
-   int16_t *raw_data = (int16_t*)buffer;
+   const int16_t *raw_data = (const int16_t*)buffer;
    size_t frames     = size / 4;
-   uint8_t *p        = (uint8_t*)buffer;
-
-   /* Byte swap - handles endianness and channel order from N64 format */
-   for (i = 0; i < size; i += 4)
-   {
-      p[i ] ^= p[i + 2];
-      p[i + 2] ^= p[i ];
-      p[i ] ^= p[i + 2];
-      p[i + 1] ^= p[i + 3];
-      p[i + 3] ^= p[i + 1];
-      p[i + 1] ^= p[i + 3];
-   }
 
 #ifdef __APPLE__
    /* Create or recreate converter if sample rate changed */
@@ -304,7 +304,12 @@ static void aiLenChanged(void* user_data, const void* buffer, size_t size)
               (input_buf_frames - to_drop) * 4);
       input_buf_frames -= to_drop;
    }
-   memcpy(converter_input_buf + input_buf_frames * 2, raw_data, frames * 4);
+   /* Channel conversion belongs to the output buffer, never guest RDRAM. */
+   for (i = 0; i < frames * 2; i += 2)
+   {
+      converter_input_buf[input_buf_frames * 2 + i] = raw_data[i + 1];
+      converter_input_buf[input_buf_frames * 2 + i + 1] = raw_data[i];
+   }
    input_buf_frames += frames;
 
    /* Wait until we have enough data for the resampling filter margin */
@@ -382,6 +387,13 @@ audio_batch:
    data.ratio        = ratio;
 
    convert_s16_to_float(audio_in_buffer_float, raw_data, frames * 2, 1.0f);
+   /* RDRAM words hold the channels in reverse order. Convert our own copy. */
+   for (i = 0; i < frames * 2; i += 2)
+   {
+      float sample = audio_in_buffer_float[i];
+      audio_in_buffer_float[i] = audio_in_buffer_float[i + 1];
+      audio_in_buffer_float[i + 1] = sample;
+   }
    resampler->process(resampler_audio_data, &data);
    convert_float_to_s16(audio_out_buffer_s16, audio_out_buffer_float, data.output_frames * 2);
 

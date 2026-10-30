@@ -114,7 +114,7 @@ void _setAndAttachBufferTexture(ObjectHandle _fbo, CachedTexture *_pTexture, u32
 		initParams.format = fbTexFormat.monochromeFormat;
 		initParams.dataType = fbTexFormat.monochromeType;
 	}
-	gfxContext.init2DTexture(initParams);
+	gfxContext.initFramebufferTexture(_pTexture, initParams);
 
 	if (!_multisampling) {
 		Context::TexParameters texParams;
@@ -588,7 +588,7 @@ void FrameBuffer::_initColorFBTexture(int _width)
 		params.internalFormat = fbTexFormat.colorInternalFormat;
 		params.format = fbTexFormat.colorFormat;
 		params.dataType = fbTexFormat.colorType;
-		gfxContext.init2DTexture(params);
+		gfxContext.initFramebufferTexture(m_pColorBufferTexture, params);
 	}
 
 	{

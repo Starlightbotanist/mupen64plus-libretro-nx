@@ -22,6 +22,9 @@
 
 #include <mupen64plus-next_common.h>
 #include <libco.h>
+#ifdef __LIBRETRO__
+#include <runtime_snapshot.h>
+#endif
 extern "C" cothread_t retro_thread;
 
 #ifdef MUPENPLUSAPI
@@ -3862,30 +3865,32 @@ public:
 	{
 	}
 
-	static std::shared_ptr<OpenGlCommand> get(GLsync sync, GLbitfield flags, GLuint64 timeout)
+	static std::shared_ptr<OpenGlCommand> get(GLsync sync, GLbitfield flags, GLuint64 timeout, GLenum& returnValue)
 	{
 		static int poolId = OpenGlCommandPool::get().getNextAvailablePool();
 		auto ptr = getFromPool<GlClientWaitSyncCommand>(poolId);
-		ptr->set(sync, flags, timeout);
+		ptr->set(sync, flags, timeout, returnValue);
 		return ptr;
 	}
 
 	void commandToExecute() override
 	{
-		ptrClientWaitSync(m_sync, m_flags, m_timeout);
+		*m_returnValue = ptrClientWaitSync(m_sync, m_flags, m_timeout);
 	}
 
 private:
-	void set(GLsync sync, GLbitfield flags, GLuint64 timeout)
+	void set(GLsync sync, GLbitfield flags, GLuint64 timeout, GLenum& returnValue)
 	{
 		m_sync = sync;
 		m_flags = flags;
 		m_timeout = timeout;
+		m_returnValue = &returnValue;
 	}
 
 	GLsync m_sync;
 	GLbitfield m_flags;
 	GLuint64 m_timeout;
+	GLenum* m_returnValue;
 };
 
 class GlDeleteSyncCommand : public OpenGlCommand
@@ -5261,6 +5266,36 @@ private:
 	int* m_value;
 };
 
+#ifdef __LIBRETRO__
+class ContextCallbackCommand : public OpenGlCommand
+{
+public:
+	ContextCallbackCommand() : OpenGlCommand(true, false, "ContextCallback", false) {}
+	static std::shared_ptr<OpenGlCommand> get(void (*callback)(void))
+	{
+		static int poolId = OpenGlCommandPool::get().getNextAvailablePool();
+		auto command = getFromPool<ContextCallbackCommand>(poolId);
+		command->m_callback = callback;
+		return command;
+	}
+	void commandToExecute() override { m_callback(); }
+private:
+	void (*m_callback)(void) = nullptr;
+};
+
+class SnapshotBoundaryCommand : public OpenGlCommand
+{
+public:
+	SnapshotBoundaryCommand() : OpenGlCommand(true, false, "SnapshotBoundary", false) {}
+	static std::shared_ptr<OpenGlCommand> get()
+	{
+		static int poolId = OpenGlCommandPool::get().getNextAvailablePool();
+		return getFromPool<SnapshotBoundaryCommand>(poolId);
+	}
+	void commandToExecute() override;
+};
+#endif
+
 class CoreVideoGLSwapBuffersCommand : public OpenGlCommand
 {
 public:
@@ -5283,7 +5318,7 @@ public:
 		::CoreVideo_GL_SwapBuffers();
 #else
 		libretro_swap_buffer = true;
-		if(EnableThreadedRenderer)
+		if(EnableThreadedRenderer && !mupen_snapshot_active())
 		{
 			co_switch(retro_thread);
 		}

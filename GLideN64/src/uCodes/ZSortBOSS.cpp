@@ -1,3 +1,4 @@
+#include "SnapshotState.h"
 #include <assert.h>
 #include <math.h>
 #include "N64.h"
@@ -35,6 +36,7 @@ struct ZSortBOSSState {
 };
 
 struct ZSortBOSSState gstate;
+UcodeSnapshotBlock ZSortBOSS_SnapshotState() { return ucodeSnapshotBlock(gstate); }
 
 void ZSortBOSS_EndMainDL( u32, u32 )
 {

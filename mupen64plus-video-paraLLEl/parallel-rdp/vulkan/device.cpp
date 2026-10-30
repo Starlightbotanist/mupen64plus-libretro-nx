@@ -1649,6 +1649,8 @@ void Device::emit_queue_signals(Helper::BatchComposer &composer,
 
 VkResult Device::submit_batches(Helper::BatchComposer &composer, VkQueue queue, VkFence fence, int profiling_iteration)
 {
+	if (get_error() != VK_SUCCESS)
+		return get_error();
 	auto &submits = composer.bake(profiling_iteration);
 	if (queue_lock_callback)
 		queue_lock_callback();
@@ -1668,10 +1670,11 @@ VkResult Device::submit_batches(Helper::BatchComposer &composer, VkQueue queue, 
 		result = table->vkQueueSubmit(queue, submits.size(), submits.data(), fence);
 
 	if (ImplementationQuirks::get().queue_wait_on_submission)
-		table->vkQueueWaitIdle(queue);
+		record_error(table->vkQueueWaitIdle(queue));
 	if (queue_unlock_callback)
 		queue_unlock_callback();
 
+	record_error(result);
 	return result;
 }
 
@@ -1923,7 +1926,7 @@ CommandBufferHandle Device::request_command_buffer_nolock(unsigned thread_index,
 
 	VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 	info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	table->vkBeginCommandBuffer(cmd, &info);
+	record_error(table->vkBeginCommandBuffer(cmd, &info));
 	add_frame_counter_nolock();
 	CommandBufferHandle handle(handle_pool.command_buffers.allocate(this, cmd, pipeline_cache, type));
 	handle->set_thread_index(thread_index);
@@ -1973,7 +1976,7 @@ CommandBufferHandle Device::request_secondary_command_buffer_for_thread(unsigned
 	info.pInheritanceInfo = &inherit;
 	info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
 
-	table->vkBeginCommandBuffer(cmd, &info);
+	record_error(table->vkBeginCommandBuffer(cmd, &info));
 	add_frame_counter_nolock();
 	CommandBufferHandle handle(handle_pool.command_buffers.allocate(this, cmd, pipeline_cache, type));
 	handle->set_thread_index(thread_index);
@@ -2389,6 +2392,7 @@ void Device::wait_idle_nolock()
 		if (queue_lock_callback)
 			queue_lock_callback();
 		auto result = table->vkDeviceWaitIdle(device);
+		record_error(result);
 		if (result != VK_SUCCESS)
 			LOGE("vkDeviceWaitIdle failed with code: %d\n", result);
 		if (result == VK_ERROR_DEVICE_LOST)
@@ -2727,14 +2731,16 @@ void Device::PerFrame::begin()
 		{
 			info.pSemaphores = sems;
 			info.pValues = values;
-			table.vkWaitSemaphoresKHR(vkdevice, &info, UINT64_MAX);
+			if (device.get_error() == VK_SUCCESS)
+				device.record_error(table.vkWaitSemaphoresKHR(vkdevice, &info, UINT64_MAX));
 		}
 	}
 
 	// If we're using timeline semaphores, these paths should never be hit.
 	if (!wait_fences.empty())
 	{
-		table.vkWaitForFences(vkdevice, wait_fences.size(), wait_fences.data(), VK_TRUE, UINT64_MAX);
+		if (device.get_error() == VK_SUCCESS)
+			device.record_error(table.vkWaitForFences(vkdevice, wait_fences.size(), wait_fences.data(), VK_TRUE, UINT64_MAX));
 		wait_fences.clear();
 	}
 

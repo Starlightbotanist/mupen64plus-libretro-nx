@@ -83,6 +83,11 @@ void ContextImpl::init()
 	resetCombinerProgramBuilder();
 }
 
+void ContextImpl::invalidateState()
+{
+	m_cachedFunctions->reset();
+}
+
 void ContextImpl::destroy()
 {
 	m_createTexture.reset();
@@ -517,6 +522,12 @@ f32 ContextImpl::getMaxLineWidth()
 bool ContextImpl::isSupported(graphics::SpecialFeatures _feature) const
 {
 	switch (_feature) {
+	case graphics::SpecialFeatures::CopyImage:
+		return ptrCopyImageSubData != nullptr &&
+			(m_glInfo.isGLESX ?
+			 (m_glInfo.majorVersion > 3 || (m_glInfo.majorVersion == 3 && m_glInfo.minorVersion >= 2)) :
+			 (m_glInfo.majorVersion > 4 || (m_glInfo.majorVersion == 4 && m_glInfo.minorVersion >= 3) ||
+			  Utils::isExtensionSupported(m_glInfo, "GL_ARB_copy_image")));
 	case graphics::SpecialFeatures::BlitFramebuffer:
 		return !m_glInfo.isGLES2;
 	case graphics::SpecialFeatures::WeakBlitFramebuffer:

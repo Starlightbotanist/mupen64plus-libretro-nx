@@ -19,6 +19,12 @@ struct GHQTexInfo;
 
 struct CachedTexture
 {
+	/* Allocation metadata for exact process-local GPU copies. */
+	struct Storage {
+		u32 target = 0, samples = 0, width = 0, height = 0;
+		u32 format = 0, internalFormat = 0, dataType = 0;
+	} storage;
+
 	CachedTexture(graphics::ObjectHandle _name) : name(_name), max_level(0), frameBufferTexture(fbNone), bHDTexture(false) {}
 
 	graphics::ObjectHandle name;

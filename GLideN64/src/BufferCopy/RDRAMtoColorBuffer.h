@@ -11,6 +11,7 @@ struct FrameBuffer;
 
 class RDRAMtoColorBuffer
 {
+	friend class RendererSnapshot;
 public:
 	void init();
 	void destroy();

@@ -19,6 +19,7 @@
 #include "Combiner.h"
 #include "FrameBuffer.h"
 #include "DisplayWindow.h"
+#include "SnapshotState.h"
 #include "Debugger.h"
 
 #include "DebugDump.h"
@@ -72,6 +73,9 @@ NabooData & getNabooData()
 	static NabooData data;
 	return data;
 }
+
+UcodeSnapshotBlock F5Indi_SnapshotState() { return ucodeSnapshotBlock(getIndiData()); }
+UcodeSnapshotBlock F5Naboo_SnapshotState() { return ucodeSnapshotBlock(getNabooData()); }
 
 static
 void _updateF5DL()

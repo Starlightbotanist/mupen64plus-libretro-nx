@@ -8,6 +8,7 @@
 #include "PluginAPI.h"
 
 struct FrameBuffer;
+class RendererSnapshot;
 
 namespace FBInfo {
 
@@ -27,6 +28,7 @@ namespace FBInfo {
 	};
 
 	class FBInfo {
+		friend class ::RendererSnapshot;
 	public:
 		FBInfo();
 

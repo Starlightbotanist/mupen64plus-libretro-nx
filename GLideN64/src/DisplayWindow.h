@@ -4,6 +4,7 @@
 
 class DisplayWindow
 {
+	friend class RendererSnapshot;
 public:
 	virtual ~DisplayWindow() {}
 

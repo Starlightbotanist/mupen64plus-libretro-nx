@@ -201,6 +201,7 @@ public:
 	// scanout();
 
 private:
+	friend class Snapshot;
 	Vulkan::Device &device;
 	Vulkan::BufferHandle rdram;
 	Vulkan::BufferHandle hidden_rdram;

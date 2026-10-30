@@ -43,6 +43,7 @@
 #include <functional>
 #include <unordered_map>
 #include <stdio.h>
+#include <atomic>
 
 #ifdef GRANITE_VULKAN_FILESYSTEM
 #include "shader_manager.hpp"
@@ -211,6 +212,16 @@ public:
 
 	Device();
 	~Device();
+
+	VkResult get_error() const { return device_error.load(std::memory_order_acquire); }
+	void record_error(VkResult result)
+	{
+		if (result < 0)
+		{
+			VkResult expected = VK_SUCCESS;
+			device_error.compare_exchange_strong(expected, result, std::memory_order_release);
+		}
+	}
 
 	// No move-copy.
 	void operator=(Device &&) = delete;
@@ -464,6 +475,7 @@ public:
 
 private:
 	VkInstance instance = VK_NULL_HANDLE;
+	std::atomic<VkResult> device_error{VK_SUCCESS};
 	VkPhysicalDevice gpu = VK_NULL_HANDLE;
 	VkDevice device = VK_NULL_HANDLE;
 	const VolkDeviceTable *table = nullptr;

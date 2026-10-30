@@ -11,6 +11,7 @@ namespace graphics {
 	public:
 		virtual ~ContextImpl() {}
 		virtual void init() = 0;
+		virtual void invalidateState() = 0;
 		virtual void destroy() = 0;
 		virtual void setClampMode(ClampMode _mode) = 0;
 		virtual ClampMode getClampMode() = 0;

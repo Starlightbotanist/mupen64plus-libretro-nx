@@ -174,12 +174,18 @@ static void EmptyFunc(void)
     EXPORT unsigned int CALL X##DoRspCycles(unsigned int Cycles); \
     EXPORT void CALL X##InitiateRSP(RSP_INFO Rsp_Info, unsigned int *CycleCount); \
     EXPORT void CALL X##RomClosed(void); \
+    size_t X##_snapshot_size(void); \
+    void X##_snapshot_save(void *data); \
+    void X##_snapshot_load(const void *data); \
     \
     const rsp_plugin_functions rsp_##X = { \
         X##PluginGetVersion, \
         X##DoRspCycles, \
         X##InitiateRSP, \
-        X##RomClosed \
+        X##RomClosed, \
+        X##_snapshot_size, \
+        X##_snapshot_save, \
+        X##_snapshot_load \
     }
 
 // Define RSP Interfaces

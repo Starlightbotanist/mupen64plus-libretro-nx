@@ -86,7 +86,7 @@ void DepthBufferToRDRAM::init()
 	initParams.internalFormat = fbTexFormats.monochromeInternalFormat;
 	initParams.format = fbTexFormats.monochromeFormat;
 	initParams.dataType = fbTexFormats.monochromeType;
-	gfxContext.init2DTexture(initParams);
+	gfxContext.initFramebufferTexture(m_pColorTexture, initParams);
 
 	Context::TexParameters setParams;
 	setParams.handle = m_pColorTexture->name;
@@ -102,7 +102,7 @@ void DepthBufferToRDRAM::init()
 	initParams.internalFormat = fbTexFormats.depthInternalFormat;
 	initParams.format = fbTexFormats.depthFormat;
 	initParams.dataType = fbTexFormats.depthType;
-	gfxContext.init2DTexture(initParams);
+	gfxContext.initFramebufferTexture(m_pDepthTexture, initParams);
 
 	setParams.handle = m_pDepthTexture->name;
 	gfxContext.setTextureParameters(setParams);

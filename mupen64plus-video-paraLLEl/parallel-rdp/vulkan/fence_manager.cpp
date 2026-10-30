@@ -41,9 +41,9 @@ VkFence FenceManager::request_cleared_fence()
 	}
 	else
 	{
-		VkFence fence;
+		VkFence fence = VK_NULL_HANDLE;
 		VkFenceCreateInfo info = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
-		table->vkCreateFence(device->get_device(), &info, nullptr, &fence);
+		device->record_error(table->vkCreateFence(device->get_device(), &info, nullptr, &fence));
 		return fence;
 	}
 }

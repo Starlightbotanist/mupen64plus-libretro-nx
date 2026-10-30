@@ -59,6 +59,49 @@ typedef struct cheat {
     struct list_head list;
 } cheat_t;
 
+size_t cheat_snapshot_size(const struct cheat_ctx* ctx)
+{
+    cheat_t* cheat;
+    cheat_code_t* code;
+    size_t size = 0;
+    list_for_each_entry_t(cheat, &ctx->active_cheats, cheat_t, list) {
+        size += sizeof(cheat->was_enabled);
+        list_for_each_entry_t(code, &cheat->cheat_codes, cheat_code_t, list)
+            size += sizeof(code->old_value);
+    }
+    return size;
+}
+
+void cheat_snapshot_save(const struct cheat_ctx* ctx, void* data)
+{
+    cheat_t* cheat;
+    cheat_code_t* code;
+    unsigned char* out = data;
+    list_for_each_entry_t(cheat, &ctx->active_cheats, cheat_t, list) {
+        memcpy(out, &cheat->was_enabled, sizeof(cheat->was_enabled));
+        out += sizeof(cheat->was_enabled);
+        list_for_each_entry_t(code, &cheat->cheat_codes, cheat_code_t, list) {
+            memcpy(out, &code->old_value, sizeof(code->old_value));
+            out += sizeof(code->old_value);
+        }
+    }
+}
+
+void cheat_snapshot_load(struct cheat_ctx* ctx, const void* data)
+{
+    cheat_t* cheat;
+    cheat_code_t* code;
+    const unsigned char* in = data;
+    list_for_each_entry_t(cheat, &ctx->active_cheats, cheat_t, list) {
+        memcpy(&cheat->was_enabled, in, sizeof(cheat->was_enabled));
+        in += sizeof(cheat->was_enabled);
+        list_for_each_entry_t(code, &cheat->cheat_codes, cheat_code_t, list) {
+            memcpy(&code->old_value, in, sizeof(code->old_value));
+            in += sizeof(code->old_value);
+        }
+    }
+}
+
 /* private functions */
 static uint16_t read_address_16bit(struct r4300_core* r4300, uint32_t address)
 {

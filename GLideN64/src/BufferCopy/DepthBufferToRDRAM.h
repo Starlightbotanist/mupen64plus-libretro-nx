@@ -13,6 +13,7 @@ struct FrameBuffer;
 
 class DepthBufferToRDRAM
 {
+	friend class RendererSnapshot;
 public:
 	void init();
 	void destroy();

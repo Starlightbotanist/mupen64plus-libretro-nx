@@ -126,6 +126,7 @@ namespace opengl {
 	{
 	public:
 		void bind(graphics::Parameter _target, graphics::ObjectHandle _name);
+		bool copy(graphics::ObjectHandle _source, graphics::ObjectHandle _destination, size_t _size);
 	};
 
 	class CachedBindTexture : public Cached2<graphics::Parameter, graphics::ObjectHandle>

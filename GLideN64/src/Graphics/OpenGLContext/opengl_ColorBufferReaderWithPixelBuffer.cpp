@@ -8,6 +8,7 @@ using namespace opengl;
 ColorBufferReaderWithPixelBuffer::ColorBufferReaderWithPixelBuffer(CachedTexture *_pTexture,
 																   CachedBindBuffer *_bindBuffer)
 	: ColorBufferReader(_pTexture), m_bindBuffer(_bindBuffer)
+	, m_bufferSize(_pTexture->textureBytes)
 {
 	_initBuffers();
 }
@@ -38,8 +39,9 @@ void ColorBufferReaderWithPixelBuffer::_initBuffers()
 
 	// Initialize Pixel Buffer Objects
 	for (u32 i = 0; i < m_numPBO; ++i) {
+		/* Define the previous slot before the first asynchronous read. */
 		m_bindBuffer->bind(Parameter(GL_PIXEL_PACK_BUFFER), ObjectHandle(m_PBO[i]));
-		glBufferData(GL_PIXEL_PACK_BUFFER, m_pTexture->textureBytes, nullptr, GL_DYNAMIC_READ);
+		glBufferData(GL_PIXEL_PACK_BUFFER, m_bufferSize, m_pixelData.data(), GL_DYNAMIC_READ);
 	}
 	m_bindBuffer->bind(Parameter(GL_PIXEL_PACK_BUFFER), ObjectHandle::null);
 }
@@ -70,4 +72,27 @@ void ColorBufferReaderWithPixelBuffer::cleanUp()
 {
 	glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
 	m_bindBuffer->bind(Parameter(GL_PIXEL_PACK_BUFFER), ObjectHandle::null);
+}
+
+std::unique_ptr<ColorBufferReader> ColorBufferReaderWithPixelBuffer::clone(CachedTexture * _texture,
+	std::unique_ptr<ColorBufferReader> _reuse) const
+{
+	std::unique_ptr<ColorBufferReaderWithPixelBuffer> copy;
+	if (_reuse && _reuse->kind() == kind()) {
+		auto *reader = static_cast<ColorBufferReaderWithPixelBuffer *>(_reuse.get());
+		if (reader->m_bufferSize == m_bufferSize && reader->m_numPBO == m_numPBO)
+			copy.reset(static_cast<ColorBufferReaderWithPixelBuffer *>(_reuse.release()));
+	}
+	if (!copy)
+		copy.reset(new ColorBufferReaderWithPixelBuffer(_texture, m_bindBuffer));
+	copy->m_pTexture = _texture;
+	if (copy->m_numPBO != m_numPBO)
+		return std::unique_ptr<ColorBufferReader>();
+	for (u32 i = 0; i < m_numPBO; ++i) {
+		if (!m_bindBuffer->copy(ObjectHandle(m_PBO[i]), ObjectHandle(copy->m_PBO[i]), m_bufferSize))
+			return std::unique_ptr<ColorBufferReader>();
+	}
+	copy->m_curIndex = m_curIndex;
+	copyState(*copy);
+	return std::unique_ptr<ColorBufferReader>(copy.release());
 }

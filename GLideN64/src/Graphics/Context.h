@@ -22,6 +22,7 @@ struct CachedTexture;
 namespace graphics {
 
 	enum class SpecialFeatures {
+		CopyImage,
 		Multisampling,
 		BlitFramebuffer,
 		WeakBlitFramebuffer,
@@ -108,6 +109,7 @@ namespace graphics {
 		};
 
 		void init2DTexture(const InitTextureParams & _params);
+		void initFramebufferTexture(CachedTexture * _texture, const InitTextureParams & _params);
 
 		struct UpdateTextureDataParams {
 			ObjectHandle handle;
@@ -295,10 +297,12 @@ namespace graphics {
 		s32 getMaxMSAALevel();
 
 		bool isError() const;
+		void invalidateState();
 
 		bool isFramebufferError() const;
 
 		static bool Multisampling;
+		static bool CopyImage;
 		static bool BlitFramebuffer;
 		static bool WeakBlitFramebuffer;
 		static bool DepthFramebufferTextures;

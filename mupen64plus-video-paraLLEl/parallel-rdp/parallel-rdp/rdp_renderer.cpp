@@ -27,6 +27,7 @@
 #include "luts.hpp"
 #include "timer.hpp"
 #include <limits>
+#include <new>
 #ifdef PARALLEL_RDP_SHADER_DIR
 #include "global_managers.hpp"
 #include "os_filesystem.hpp"
@@ -36,6 +37,16 @@
 
 namespace RDP
 {
+static Vulkan::BufferHandle create_render_buffer(Vulkan::Device &device,
+                                                 const Vulkan::BufferCreateInfo &info,
+                                                 const void *initial = nullptr)
+{
+	auto buffer = device.create_buffer(info, initial);
+	if (!buffer)
+		throw std::bad_alloc();
+	return buffer;
+}
+
 Renderer::Renderer(CommandProcessor &processor_)
 	: processor(processor_)
 {
@@ -93,7 +104,7 @@ bool Renderer::init_renderer(const RendererOptions &options)
 		info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 		info.domain = Vulkan::BufferDomain::Device;
 		info.misc = Vulkan::BUFFER_MISC_ZERO_INITIALIZE_BIT;
-		tmem_instances = device->create_buffer(info);
+		tmem_instances = create_render_buffer(*device, info);
 		device->set_name(*tmem_instances, "tmem-instances");
 		stream.tmem_upload_infos.reserve(Limits::MaxTMEMInstances);
 	}
@@ -104,7 +115,7 @@ bool Renderer::init_renderer(const RendererOptions &options)
 		info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 		info.domain = Vulkan::BufferDomain::Device;
 		info.misc = Vulkan::BUFFER_MISC_ZERO_INITIALIZE_BIT;
-		span_setups = device->create_buffer(info);
+		span_setups = create_render_buffer(*device, info);
 		device->set_name(*span_setups, "span-setups");
 	}
 
@@ -277,14 +288,14 @@ void Renderer::init_buffers(const RendererOptions &options)
 	            (caps.max_width / ImplementationConstants::TileWidth) *
 	            (caps.max_height / ImplementationConstants::TileHeight);
 
-	tile_binning_buffer = device->create_buffer(info);
+	tile_binning_buffer = create_render_buffer(*device, info);
 	device->set_name(*tile_binning_buffer, "tile-binning-buffer");
 
 	info.size = sizeof(uint32_t) *
 	            (caps.max_width / ImplementationConstants::TileWidth) *
 	            (caps.max_height / ImplementationConstants::TileHeight);
 
-	tile_binning_buffer_coarse = device->create_buffer(info);
+	tile_binning_buffer_coarse = create_render_buffer(*device, info);
 	device->set_name(*tile_binning_buffer_coarse, "tile-binning-buffer-coarse");
 
 	if (!caps.ubershader)
@@ -294,28 +305,28 @@ void Renderer::init_buffers(const RendererOptions &options)
 		            (caps.max_width / ImplementationConstants::TileWidth) *
 		            (caps.max_height / ImplementationConstants::TileHeight);
 
-		per_tile_offsets = device->create_buffer(info);
+		per_tile_offsets = create_render_buffer(*device, info);
 		device->set_name(*per_tile_offsets, "per-tile-offsets");
 
 		info.size = sizeof(TileRasterWork) * Limits::MaxStaticRasterizationStates * caps.max_num_tile_instances;
-		tile_work_list = device->create_buffer(info);
+		tile_work_list = create_render_buffer(*device, info);
 		device->set_name(*tile_work_list, "tile-work-list");
 
 		info.size = sizeof(uint32_t) *
 		            caps.max_num_tile_instances *
 		            ImplementationConstants::TileWidth *
 		            ImplementationConstants::TileHeight;
-		per_tile_shaded_color = device->create_buffer(info);
+		per_tile_shaded_color = create_render_buffer(*device, info);
 		device->set_name(*per_tile_shaded_color, "per-tile-shaded-color");
-		per_tile_shaded_depth = device->create_buffer(info);
+		per_tile_shaded_depth = create_render_buffer(*device, info);
 		device->set_name(*per_tile_shaded_depth, "per-tile-shaded-depth");
 
 		info.size = sizeof(uint8_t) *
 		            caps.max_num_tile_instances *
 		            ImplementationConstants::TileWidth *
 		            ImplementationConstants::TileHeight;
-		per_tile_shaded_coverage = device->create_buffer(info);
-		per_tile_shaded_shaded_alpha = device->create_buffer(info);
+		per_tile_shaded_coverage = create_render_buffer(*device, info);
+		per_tile_shaded_shaded_alpha = create_render_buffer(*device, info);
 		device->set_name(*per_tile_shaded_coverage, "per-tile-shaded-coverage");
 		device->set_name(*per_tile_shaded_shaded_alpha, "per-tile-shaded-shaded-alpha");
 	}
@@ -328,7 +339,7 @@ void Renderer::init_blender_lut()
 	info.domain = Vulkan::BufferDomain::Device;
 	info.usage = VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT;
 
-	blender_divider_lut_buffer = device->create_buffer(info, blender_lut);
+	blender_divider_lut_buffer = create_render_buffer(*device, info, blender_lut);
 	device->set_name(*blender_divider_lut_buffer, "blender-divider-lut-buffer");
 
 	Vulkan::BufferViewCreateInfo view = {};
@@ -336,6 +347,8 @@ void Renderer::init_blender_lut()
 	view.format = VK_FORMAT_R8_UINT;
 	view.range = info.size;
 	blender_divider_buffer = device->create_buffer_view(view);
+	if (!blender_divider_buffer)
+		throw std::bad_alloc();
 }
 
 void Renderer::message(const std::string &tag, uint32_t code, uint32_t x, uint32_t y, uint32_t, uint32_t num_words,
@@ -496,6 +509,8 @@ void Renderer::RenderBuffers::init(Vulkan::Device &device, Vulkan::BufferDomain 
 		info.format = VK_FORMAT_R16G16B16A16_UINT;
 		info.range = span_info_jobs.buffer->get_create_info().size;
 		span_info_jobs_view = device.create_buffer_view(info);
+		if (!span_info_jobs_view)
+			throw std::bad_alloc();
 	}
 }
 
@@ -524,7 +539,7 @@ Renderer::MappedBuffer Renderer::RenderBuffers::create_buffer(
 
 	info.size = size;
 	Renderer::MappedBuffer buffer;
-	buffer.buffer = device.create_buffer(info);
+	buffer.buffer = create_render_buffer(device, info);
 	buffer.is_host = device.map_host_buffer(*buffer.buffer, 0) != nullptr;
 	return buffer;
 }
@@ -562,7 +577,7 @@ bool Renderer::init_internal_upscaling_factor(const RendererOptions &options)
 	info.misc = Vulkan::BUFFER_MISC_ZERO_INITIALIZE_BIT;
 
 	info.size = rdram_size;
-	upscaling_reference_rdram = device->create_buffer(info);
+	upscaling_reference_rdram = create_render_buffer(*device, info);
 	device->set_name(*upscaling_reference_rdram, "reference-rdram");
 
 	info.size = rdram_size * factor * factor;
@@ -574,11 +589,11 @@ bool Renderer::init_internal_upscaling_factor(const RendererOptions &options)
 	if (caps.super_sample_readback)
 		info.size += 2 * Limits::MaxWidth * Limits::MaxHeight / 8;
 
-	upscaling_multisampled_rdram = device->create_buffer(info);
+	upscaling_multisampled_rdram = create_render_buffer(*device, info);
 	device->set_name(*upscaling_multisampled_rdram, "multisampled-rdram");
 
 	info.size = hidden_rdram->get_create_info().size * factor * factor;
-	upscaling_multisampled_hidden_rdram = device->create_buffer(info);
+	upscaling_multisampled_hidden_rdram = create_render_buffer(*device, info);
 	device->set_name(*upscaling_multisampled_hidden_rdram, "multisampled-hidden-rdram");
 
 	{
@@ -613,7 +628,7 @@ void Renderer::set_rdram(Vulkan::Buffer *buffer, uint8_t *host_rdram, size_t off
 		info.size = size;
 		info.domain = Vulkan::BufferDomain::Host;
 		info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-		incoherent.staging_rdram = device->create_buffer(info);
+		incoherent.staging_rdram = create_render_buffer(*device, info);
 		device->set_name(*incoherent.staging_rdram, "staging-rdram");
 
 		const auto div_round_up = [](size_t a, size_t b) -> size_t { return (a + b - 1) / b; };
@@ -625,7 +640,7 @@ void Renderer::set_rdram(Vulkan::Buffer *buffer, uint8_t *host_rdram, size_t off
 			readback_info.domain = Vulkan::BufferDomain::CachedCoherentHostPreferCached;
 			readback_info.size = rdram_size * Limits::NumSyncStates;
 			readback_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-			incoherent.staging_readback = device->create_buffer(readback_info);
+			incoherent.staging_readback = create_render_buffer(*device, readback_info);
 			device->set_name(*incoherent.staging_readback, "staging-readback");
 			incoherent.staging_readback_pages = div_round_up(readback_info.size, ImplementationConstants::IncoherentPageSize);
 		}

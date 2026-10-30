@@ -21,6 +21,7 @@ namespace opengl {
 		~ContextImpl();
 
 		void init() override;
+		void invalidateState() override;
 
 		void destroy() override;
 

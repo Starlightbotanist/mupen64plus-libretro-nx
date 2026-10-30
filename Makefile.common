@@ -232,6 +232,7 @@ endif
 
 # Libretro
 SOURCES_C += $(LIBRETRO_DIR)/libretro.c \
+	$(LIBRETRO_DIR)/snapshot.c \
 	$(LIBRETRO_COMM_DIR)/memmap/memalign.c \
 	$(ROOT_DIR)/custom/mupen64plus-core/plugin/emulate_game_controller_via_libretro.c \
 	$(LIBRETRO_COMM_DIR)/audio/resampler/drivers/sinc_resampler.c \
@@ -272,6 +273,7 @@ SOURCES_CXX   += \
     $(VIDEODIR_GLIDEN64)/src/Graphics/OpenGLContext/mupen64plus/mupen64plus_DisplayWindow.cpp     \
     $(VIDEODIR_GLIDEN64)/src/DisplayLoadProgress.cpp                                              \
     $(VIDEODIR_GLIDEN64)/src/FrameBuffer.cpp                                                      \
+    $(ROOT_DIR)/custom/GLideN64/Snapshot.cpp                                                   \
     $(VIDEODIR_GLIDEN64)/src/FrameBufferInfo.cpp                                                  \
     $(VIDEODIR_GLIDEN64)/src/GBI.cpp                                                              \
     $(VIDEODIR_GLIDEN64)/src/gDP.cpp                                                              \

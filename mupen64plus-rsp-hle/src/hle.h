@@ -23,6 +23,11 @@
 #define HLE_H
 
 #include "hle_internal.h"
+#include <stddef.h>
+
+size_t hle_snapshot_size(void);
+void hle_snapshot_save(void *data);
+void hle_snapshot_load(const void *data);
 
 void hle_init(struct hle_t* hle,
     unsigned char* dram,

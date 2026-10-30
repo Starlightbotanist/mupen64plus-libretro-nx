@@ -120,6 +120,7 @@ public:
 	void end_vi_register_per_scanline();
 
 private:
+	friend class Snapshot;
 	Vulkan::Device *device = nullptr;
 	Renderer *renderer = nullptr;
 	uint32_t vi_registers[unsigned(VIRegister::Count)] = {};

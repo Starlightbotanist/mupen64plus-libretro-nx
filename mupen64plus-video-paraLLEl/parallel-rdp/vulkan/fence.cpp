@@ -50,7 +50,7 @@ void FenceHolder::wait()
 	// when waiting for a timeline semaphore in parallel with same value as well.
 	std::lock_guard<std::mutex> holder{lock};
 #endif
-	if (observed_wait)
+	if (observed_wait || device->get_error() != VK_SUCCESS)
 		return;
 
 	if (timeline_value != 0)
@@ -60,14 +60,18 @@ void FenceHolder::wait()
 		info.semaphoreCount = 1;
 		info.pSemaphores = &timeline_semaphore;
 		info.pValues = &timeline_value;
-		if (table.vkWaitSemaphoresKHR(device->get_device(), &info, UINT64_MAX) != VK_SUCCESS)
+		auto result = table.vkWaitSemaphoresKHR(device->get_device(), &info, UINT64_MAX);
+		device->record_error(result);
+		if (result != VK_SUCCESS)
 			LOGE("Failed to wait for timeline semaphore!\n");
 		else
 			observed_wait = true;
 	}
 	else
 	{
-		if (table.vkWaitForFences(device->get_device(), 1, &fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS)
+		auto result = table.vkWaitForFences(device->get_device(), 1, &fence, VK_TRUE, UINT64_MAX);
+		device->record_error(result);
+		if (result != VK_SUCCESS)
 			LOGE("Failed to wait for fence!\n");
 		else
 			observed_wait = true;
@@ -76,6 +80,8 @@ void FenceHolder::wait()
 
 bool FenceHolder::wait_timeout(uint64_t timeout)
 {
+	if (device->get_error() != VK_SUCCESS)
+		return false;
 	bool ret = false;
 	auto &table = device->get_device_table();
 	if (timeline_value != 0)
@@ -85,10 +91,16 @@ bool FenceHolder::wait_timeout(uint64_t timeout)
 		info.semaphoreCount = 1;
 		info.pSemaphores = &timeline_semaphore;
 		info.pValues = &timeline_value;
-		ret = table.vkWaitSemaphoresKHR(device->get_device(), &info, timeout) == VK_SUCCESS;
+		auto result = table.vkWaitSemaphoresKHR(device->get_device(), &info, timeout);
+		device->record_error(result);
+		ret = result == VK_SUCCESS;
 	}
 	else
-		ret = table.vkWaitForFences(device->get_device(), 1, &fence, VK_TRUE, timeout) == VK_SUCCESS;
+	{
+		auto result = table.vkWaitForFences(device->get_device(), 1, &fence, VK_TRUE, timeout);
+		device->record_error(result);
+		ret = result == VK_SUCCESS;
+	}
 
 	if (ret)
 		observed_wait = true;

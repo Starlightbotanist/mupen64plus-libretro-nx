@@ -150,6 +150,40 @@ static size_t l_pak_type_idx[6];
 /* PRNG state - used for Mempaks ID generation */
 struct xoshiro256pp_state l_mpk_idgen;
 
+struct main_snapshot_data
+{
+    int frame, cheat_vi;
+    size_t pak_index[GAME_CONTROLLERS_COUNT];
+    struct xoshiro256pp_state idgen;
+};
+
+size_t main_snapshot_size(void)
+{
+    return sizeof(struct main_snapshot_data) + cheat_snapshot_size(&g_cheat_ctx);
+}
+
+void main_snapshot_save(void* data)
+{
+    struct main_snapshot_data state;
+    state.frame = l_CurrentFrame;
+    state.cheat_vi = g_gs_vi_counter;
+    memcpy(state.pak_index, l_paks_idx, sizeof(state.pak_index));
+    state.idgen = l_mpk_idgen;
+    memcpy(data, &state, sizeof(state));
+    cheat_snapshot_save(&g_cheat_ctx, (unsigned char*)data + sizeof(state));
+}
+
+void main_snapshot_load(const void* data)
+{
+    struct main_snapshot_data state;
+    memcpy(&state, data, sizeof(state));
+    l_CurrentFrame = state.frame;
+    g_gs_vi_counter = state.cheat_vi;
+    memcpy(l_paks_idx, state.pak_index, sizeof(state.pak_index));
+    l_mpk_idgen = state.idgen;
+    cheat_snapshot_load(&g_cheat_ctx, (const unsigned char*)data + sizeof(state));
+}
+
 /*********************************************************************************************************
 * static functions
 */
@@ -826,7 +860,7 @@ void new_vi(void)
     main_check_inputs();
 
     netplay_check_sync(&g_dev.r4300.cp0);
-    retro_return();
+    retro_frame_pending = true;
 }
 
 static void main_switch_pak(int control_id)

@@ -45,6 +45,9 @@
 #include "device/rcp/vi/vi_controller.h"
 #include "main/main.h"
 #include "main/savestates.h"
+#ifdef __LIBRETRO__
+#include "mupen64plus-next_common.h"
+#endif
 
 
 /***************************************************************************
@@ -670,6 +673,12 @@ void gen_interrupt(struct r4300_core* r4300)
             savestates_save();
             return;
         }
+#ifdef __LIBRETRO__
+        /* Snapshots must see the completed VI event, not a suspended
+         * handler whose remaining work would run after restoration. */
+        if (retro_frame_pending)
+            retro_return();
+#endif
     }
 }
 

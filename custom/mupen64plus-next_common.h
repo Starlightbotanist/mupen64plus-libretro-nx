@@ -62,6 +62,9 @@ extern enum rdp_plugin_type current_rdp_type;
 extern enum rsp_plugin_type current_rsp_type;
 extern retro_environment_t environ_cb;
 extern bool libretro_swap_buffer;
+/* A VI requests a yield; the CPU completes the interrupt before yielding. */
+extern bool retro_frame_pending;
+void retro_return(void);
 
 // Misc Globals
 extern CONTROL Controls[4];
@@ -81,6 +84,7 @@ extern char* retro_transferpak_ram_path;
 
 // Threaded GL Callback
 extern void gln64_thr_gl_invoke_command_loop();
+extern void gln64_thr_gl_snapshot_boundary(void);
 extern bool threaded_gl_safe_shutdown;
 
 // GLN64 context management (for libretro context_destroy/context_reset)

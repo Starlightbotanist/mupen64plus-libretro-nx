@@ -189,7 +189,7 @@ void write_rdram_fb(void* opaque, uint32_t address, uint32_t value, uint32_t mas
 #define W(x) write_ ## x
 #define RW(x) R(x), W(x)
 
-void protect_framebuffers(struct fb* fb)
+static void map_framebuffers(struct fb* fb, int mark_dirty)
 {
     size_t i, j;
     struct mem_mapping fb_mapping = { 0, 0, M64P_MEM_RDRAM, { fb, RW(rdram_fb) } };
@@ -199,9 +199,6 @@ void protect_framebuffers(struct fb* fb)
         || fb->r4300->emumode == EMUMODE_DYNAREC /* Dynarecs currently miss some of the read/writes needed for FBInfo */) {
         return;
     }
-
-    /* ask fb info to gfx plugin */
-    gfx.fBGetFrameBufferInfo(fb->infos);
 
     /* return early if not FB info is present */
     if (fb->infos[0].addr == 0) {
@@ -221,12 +218,12 @@ void protect_framebuffers(struct fb* fb)
         apply_mem_mapping(fb->mem, &fb_mapping);
 
         /* mark all pages that are within a fb as dirty */
-        for (j = fb_mapping.begin >> 12; j <= (fb_mapping.end >> 12); ++j) {
-            fb->dirty_page[j] = 1;
-        }
+        if (mark_dirty)
+            for (j = fb_mapping.begin >> 12; j <= (fb_mapping.end >> 12); ++j)
+                fb->dirty_page[j] = 1;
 
         /* disable dynarec "fast memory" code generation to avoid direct memory accesses */
-        if (fb->once) {
+        if (mark_dirty && fb->once) {
             fb->once = 0;
 #ifndef NEW_DYNAREC
             fb->r4300->recomp.fast_memory = 0;
@@ -236,6 +233,20 @@ void protect_framebuffers(struct fb* fb)
             invalidate_r4300_cached_code(fb->r4300, 0, 0);
         }
     }
+}
+
+void protect_framebuffers(struct fb* fb)
+{
+    if (!(gfx.fBGetFrameBufferInfo && gfx.fBRead && gfx.fBWrite) ||
+        fb->r4300->emumode == EMUMODE_DYNAREC)
+        return;
+    gfx.fBGetFrameBufferInfo(fb->infos);
+    map_framebuffers(fb, 1);
+}
+
+void restore_framebuffer_mappings(struct fb* fb)
+{
+    map_framebuffers(fb, 0);
 }
 
 void unprotect_framebuffers(struct fb* fb)

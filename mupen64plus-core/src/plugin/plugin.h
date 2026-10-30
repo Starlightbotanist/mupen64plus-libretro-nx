@@ -116,15 +116,7 @@ typedef struct _input_plugin_functions
 extern input_plugin_functions input;
 
 /* RSP plugin function pointers */
-typedef struct _rsp_plugin_functions
-{
-	ptr_PluginGetVersion    getVersion;
-	ptr_DoRspCycles         doRspCycles;
-	ptr_InitiateRSP         initiateRSP;
-	ptr_RomClosed           romClosed;
-} rsp_plugin_functions;
-
-extern rsp_plugin_functions rsp;
+#include "plugin/rsp_plugin.h"
 
 #endif
 

@@ -144,6 +144,22 @@ public:
 		m_PBO = 0;
 	}
 
+	Kind kind() const override { return Kind::PixelBuffer; }
+	std::unique_ptr<graphics::PixelReadBuffer> clone(std::unique_ptr<graphics::PixelReadBuffer> _reuse) const override
+	{
+		std::unique_ptr<PBOReadBuffer> copy;
+		if (_reuse && _reuse->kind() == kind()) {
+			auto *buffer = static_cast<PBOReadBuffer *>(_reuse.get());
+			if (buffer->m_size == m_size)
+				copy.reset(static_cast<PBOReadBuffer *>(_reuse.release()));
+		}
+		if (!copy)
+			copy.reset(new PBOReadBuffer(m_bind, m_size));
+		if (!m_bind->copy(graphics::ObjectHandle(m_PBO), graphics::ObjectHandle(copy->m_PBO), m_size))
+			return std::unique_ptr<graphics::PixelReadBuffer>();
+		return std::unique_ptr<graphics::PixelReadBuffer>(copy.release());
+	}
+
 	void readPixels(s32 _x,s32 _y, u32 _width, u32 _height, graphics::Parameter _format, graphics::Parameter _type) override
 	{
 		glReadPixels(_x, _y, _width, _height, GLenum(_format), GLenum(_type), 0);

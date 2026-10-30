@@ -8,7 +8,17 @@
 
 struct FrameBuffer;
 
-struct DepthBuffer
+struct DepthBufferState
+{
+	u32 m_address = 0;
+	u32 m_width = 0;
+	bool m_cleared = false;
+	u32 m_depthRenderbufferWidth = 0;
+	bool m_resolved = false;
+	bool m_copied = false;
+};
+
+struct DepthBuffer : DepthBufferState
 {
 	DepthBuffer();
 	~DepthBuffer();
@@ -22,14 +32,10 @@ struct DepthBuffer
 
 	void bindDepthImageTexture(graphics::ObjectHandle _fbo);
 
-	u32 m_address = 0;
-	u32 m_width = 0;
-	bool m_cleared = false;
 
 	CachedTexture *m_pDepthBufferTexture = nullptr;
 
 	graphics::ObjectHandle m_depthRenderbuffer;
-	u32 m_depthRenderbufferWidth = 0;
 
 	CachedTexture *m_pDepthImageZTexture = nullptr;
 	CachedTexture *m_pDepthImageDeltaZTexture = nullptr;
@@ -38,12 +44,10 @@ struct DepthBuffer
 
 	// multisampling
 	CachedTexture *m_pResolveDepthBufferTexture = nullptr;
-	bool m_resolved = false;
 
 	// render to depth buffer
 	graphics::ObjectHandle m_copyFBO;
 	CachedTexture *m_pDepthBufferCopyTexture = nullptr;
-	bool m_copied = false;
 
 	static void copyDepthBufferTexture(FrameBuffer * _pBuffer, CachedTexture *& _pTexture, graphics::ObjectHandle _copyFBO);
 	static void _initDepthBufferTexture(const FrameBuffer * _pBuffer, CachedTexture *_pTexture, bool _multisample);
@@ -56,6 +60,7 @@ private:
 
 class DepthBufferList
 {
+	friend class RendererSnapshot;
 public:
 	void init();
 	void destroy();

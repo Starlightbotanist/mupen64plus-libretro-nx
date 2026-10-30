@@ -100,6 +100,9 @@ m64p_error main_volume_mute(void);
 int        main_volume_get_muted(void);
 
 m64p_error main_reset(int do_hard_reset);
+size_t main_snapshot_size(void);
+void main_snapshot_save(void* data);
+void main_snapshot_load(const void* data);
 
 m64p_error open_pif(const unsigned char* pifimage, unsigned int size);
 m64p_error close_pif(void);

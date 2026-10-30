@@ -29,5 +29,7 @@ enum pak_type;
 int egcvip_is_connected(void* opaque, enum pak_type* pak);
 
 uint32_t egcvip_get_input(void* opaque);
+void egcvip_snapshot_save(uint32_t buttons[4]);
+void egcvip_snapshot_load(const uint32_t buttons[4]);
 
 #endif

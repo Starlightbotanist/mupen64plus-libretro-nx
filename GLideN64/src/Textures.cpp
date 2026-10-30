@@ -21,6 +21,7 @@
 #include "Graphics/Parameters.h"
 #include "DisplayWindow.h"
 #include <mupen64plus-next_common.h>
+#include <GLideN64/Snapshot.h>
 
 using namespace std;
 using namespace graphics;
@@ -760,10 +761,12 @@ void TextureCache::init()
 	}
 
 	assert(!gfxContext.isError());
+	gln64_snapshot_context_reset();
 }
 
 void TextureCache::destroy()
 {
+	gln64_snapshot_context_destroy();
 	current[0] = current[1] = nullptr;
 
 	for (Textures::const_iterator cur = m_textures.cbegin(); cur != m_textures.cend(); ++cur)

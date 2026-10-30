@@ -53,7 +53,8 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 {
 	BufferCreateInfo info = {};
 	info.size = rdram_size;
-	info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+	             VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	info.domain = BufferDomain::CachedCoherentHostPreferCached;
 	info.misc = BUFFER_MISC_ZERO_INITIALIZE_BIT;
 
@@ -129,10 +130,17 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 	info.domain = (flags & COMMAND_PROCESSOR_FLAG_HOST_VISIBLE_TMEM_BIT) != 0 ?
 	              BufferDomain::CachedCoherentHostPreferCoherent : BufferDomain::Device;
 	tmem = device.create_buffer(info);
+	if (!rdram || !hidden_rdram || !tmem)
+	{
+		LOGE("Failed to allocate RDP memory.\n");
+		return;
+	}
 
 	clear_hidden_rdram();
 	clear_tmem();
 	init_renderer();
+	if (!is_supported)
+		return;
 
 	if (const char *env = getenv("PARALLEL_RDP_BENCH"))
 	{
@@ -163,7 +171,8 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 
 CommandProcessor::~CommandProcessor()
 {
-	idle();
+	if (is_supported)
+		idle();
 }
 
 void CommandProcessor::begin_frame_context()
@@ -175,51 +184,61 @@ void CommandProcessor::begin_frame_context()
 
 void CommandProcessor::init_renderer()
 {
-	if (!rdram)
+	try
 	{
-		is_supported = false;
-		return;
-	}
+		if (!rdram)
+		{
+			is_supported = false;
+			return;
+		}
 
-	renderer.set_device(&device);
-	renderer.set_rdram(rdram.get(), host_rdram, rdram_offset, rdram_size, is_host_coherent);
-	renderer.set_hidden_rdram(hidden_rdram.get());
-	renderer.set_tmem(tmem.get());
+		renderer.set_device(&device);
+		renderer.set_rdram(rdram.get(), host_rdram, rdram_offset, rdram_size, is_host_coherent);
+		renderer.set_hidden_rdram(hidden_rdram.get());
+		renderer.set_tmem(tmem.get());
 
-	unsigned factor = 1;
-	if (flags & COMMAND_PROCESSOR_FLAG_UPSCALING_8X_BIT)
-		factor = 8;
-	else if (flags & COMMAND_PROCESSOR_FLAG_UPSCALING_4X_BIT)
-		factor = 4;
-	else if (flags & COMMAND_PROCESSOR_FLAG_UPSCALING_2X_BIT)
-		factor = 2;
+		unsigned factor = 1;
+		if (flags & COMMAND_PROCESSOR_FLAG_UPSCALING_8X_BIT)
+			factor = 8;
+		else if (flags & COMMAND_PROCESSOR_FLAG_UPSCALING_4X_BIT)
+			factor = 4;
+		else if (flags & COMMAND_PROCESSOR_FLAG_UPSCALING_2X_BIT)
+			factor = 2;
 
-	if (factor != 1)
-		LOGI("Enabling upscaling: %ux.\n", factor);
+		if (factor != 1)
+			LOGI("Enabling upscaling: %ux.\n", factor);
 
-	RendererOptions opts;
-	opts.upscaling_factor = factor;
-	opts.super_sampled_readback = (flags & COMMAND_PROCESSOR_FLAG_SUPER_SAMPLED_READ_BACK_BIT) != 0;
-	opts.super_sampled_readback_dither = (flags & COMMAND_PROCESSOR_FLAG_SUPER_SAMPLED_DITHER_BIT) != 0;
+		RendererOptions opts;
+		opts.upscaling_factor = factor;
+		opts.super_sampled_readback = (flags & COMMAND_PROCESSOR_FLAG_SUPER_SAMPLED_READ_BACK_BIT) != 0;
+		opts.super_sampled_readback_dither = (flags & COMMAND_PROCESSOR_FLAG_SUPER_SAMPLED_DITHER_BIT) != 0;
 
-	is_supported = renderer.init_renderer(opts);
+		is_supported = renderer.init_renderer(opts);
+		if (!is_supported)
+			return;
 
-	vi.set_device(&device);
-	vi.set_rdram(rdram.get(), rdram_offset, rdram_size);
-	vi.set_hidden_rdram(hidden_rdram.get());
-	vi.set_renderer(&renderer);
+		vi.set_device(&device);
+		vi.set_rdram(rdram.get(), rdram_offset, rdram_size);
+		vi.set_hidden_rdram(hidden_rdram.get());
+		vi.set_renderer(&renderer);
 
 #ifndef PARALLEL_RDP_SHADER_DIR
-	Vulkan::ResourceLayout layout;
-	shader_bank.reset(new ShaderBank(device, layout, [&](const char *name, const char *define) -> int {
-		if (strncmp(name, "vi_", 3) == 0)
-			return vi.resolve_shader_define(name, define);
-		else
-			return renderer.resolve_shader_define(name, define);
-	}));
-	renderer.set_shader_bank(shader_bank.get());
-	vi.set_shader_bank(shader_bank.get());
+		Vulkan::ResourceLayout layout;
+		shader_bank.reset(new ShaderBank(device, layout, [&](const char *name, const char *define) -> int {
+			if (strncmp(name, "vi_", 3) == 0)
+				return vi.resolve_shader_define(name, define);
+			else
+				return renderer.resolve_shader_define(name, define);
+		}));
+		renderer.set_shader_bank(shader_bank.get());
+		vi.set_shader_bank(shader_bank.get());
 #endif
+	}
+	catch (const std::bad_alloc &)
+	{
+		is_supported = false;
+		LOGE("Failed to allocate RDP render resources.\n");
+	}
 }
 
 bool CommandProcessor::device_is_supported() const
@@ -1240,9 +1259,12 @@ void CommandProcessor::FenceExecutor::perform_work(CoherencyOperation &work)
 	{
 		for (auto &copy : work.copies)
 		{
-			auto *mapped_data = static_cast<uint8_t *>(device->map_host_buffer(*work.src, MEMORY_ACCESS_READ_BIT, copy.src_offset, copy.size));
-			auto *mapped_mask = static_cast<uint8_t *>(device->map_host_buffer(*work.src, MEMORY_ACCESS_READ_BIT, copy.mask_offset, copy.size));
-			masked_memcpy(work.dst + copy.dst_offset, mapped_data, mapped_mask, copy.size);
+			if (device->get_error() == VK_SUCCESS)
+			{
+				auto *mapped_data = static_cast<uint8_t *>(device->map_host_buffer(*work.src, MEMORY_ACCESS_READ_BIT, copy.src_offset, copy.size));
+				auto *mapped_mask = static_cast<uint8_t *>(device->map_host_buffer(*work.src, MEMORY_ACCESS_READ_BIT, copy.mask_offset, copy.size));
+				masked_memcpy(work.dst + copy.dst_offset, mapped_data, mapped_mask, copy.size);
+			}
 			for (unsigned i = 0; i < copy.counters; i++)
 			{
 				unsigned val = copy.counter_base[i].fetch_sub(1, std::memory_order_release);

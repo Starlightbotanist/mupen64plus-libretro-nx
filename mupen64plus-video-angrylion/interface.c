@@ -161,8 +161,7 @@ void angrylion_set_vi(unsigned value)
       config.vi.mode = (enum vi_mode)value;
       if (angrylion_init)
       {
-          n64video_close();
-          n64video_init(&config);
+          n64video_update_config(&config);
       }
    }
 }
@@ -175,8 +174,7 @@ void angrylion_set_threads(unsigned value)
      config.num_workers = value;
      if (angrylion_init)
      {
-         n64video_close();
-         n64video_init(&config);
+         n64video_update_config(&config);
      }
     }
     
@@ -189,8 +187,7 @@ void angrylion_set_overscan(unsigned value)
       config.vi.hide_overscan = (bool)value;
       if (angrylion_init)
       {
-         n64video_close();
-         n64video_init(&config);
+         n64video_update_config(&config);
       }
    }
     
@@ -203,8 +200,7 @@ void angrylion_set_vi_dedither(unsigned value)
       config.vi.vi_dedither = (bool)value;
       if (angrylion_init)
       {
-         n64video_close();
-         n64video_init(&config);
+         n64video_update_config(&config);
       }
    }
     
@@ -217,8 +213,7 @@ void angrylion_set_vi_blur(unsigned value)
       config.vi.vi_blur = (bool)value;
       if (angrylion_init)
       {
-         n64video_close();
-         n64video_init(&config);
+         n64video_update_config(&config);
       }
    }
     
@@ -231,8 +226,7 @@ void angrylion_set_synclevel(unsigned value)
       config.dp.compat= (enum dp_compat_profile)value;
       if (angrylion_init)
       {
-         n64video_close();
-         n64video_init(&config);
+         n64video_update_config(&config);
       }
    }
 }
@@ -265,8 +259,7 @@ void angrylion_set_filtering(unsigned filter_type)
       config.vi.interp = (enum vi_interp)filter_type;
       if (angrylion_init)
       {
-         n64video_close();
-         n64video_init(&config);
+         n64video_update_config(&config);
       }
    }
 }

@@ -1,3 +1,4 @@
+#include "SnapshotState.h"
 #include <assert.h>
 #include <algorithm>
 #include "S2DEX.h"
@@ -258,6 +259,7 @@ struct uObjSubMtx
 };
 
 static uObjMtx objMtx;
+UcodeSnapshotBlock S2DEX_SnapshotState() { return ucodeSnapshotBlock(objMtx); }
 
 void resetObjMtx()
 {

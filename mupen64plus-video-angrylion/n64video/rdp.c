@@ -340,6 +340,46 @@ struct rdp_state
 
 struct rdp_state state[PARALLEL_MAX_WORKERS];
 
+static void rebase_inputs(int32_t *inputs[2], uint32_t wid)
+{
+    unsigned i;
+    for (i = 0; i < 2; i++) {
+        uintptr_t address = (uintptr_t)inputs[i];
+        uintptr_t base = (uintptr_t)&state[0];
+        if (address >= base && address - base < sizeof(struct rdp_state))
+            inputs[i] = (int32_t*)((uint8_t*)&state[wid] + (address - base));
+    }
+}
+
+static void copy_worker(uint32_t wid)
+{
+    state[wid] = state[0];
+    rebase_inputs(state[wid].blender1a_r, wid);
+    rebase_inputs(state[wid].blender1a_g, wid);
+    rebase_inputs(state[wid].blender1a_b, wid);
+    rebase_inputs(state[wid].blender1b_a, wid);
+    rebase_inputs(state[wid].blender2a_r, wid);
+    rebase_inputs(state[wid].blender2a_g, wid);
+    rebase_inputs(state[wid].blender2a_b, wid);
+    rebase_inputs(state[wid].blender2b_a, wid);
+    rebase_inputs(state[wid].combiner_rgbsub_a_r, wid);
+    rebase_inputs(state[wid].combiner_rgbsub_a_g, wid);
+    rebase_inputs(state[wid].combiner_rgbsub_a_b, wid);
+    rebase_inputs(state[wid].combiner_rgbsub_b_r, wid);
+    rebase_inputs(state[wid].combiner_rgbsub_b_g, wid);
+    rebase_inputs(state[wid].combiner_rgbsub_b_b, wid);
+    rebase_inputs(state[wid].combiner_rgbmul_r, wid);
+    rebase_inputs(state[wid].combiner_rgbmul_g, wid);
+    rebase_inputs(state[wid].combiner_rgbmul_b, wid);
+    rebase_inputs(state[wid].combiner_rgbadd_r, wid);
+    rebase_inputs(state[wid].combiner_rgbadd_g, wid);
+    rebase_inputs(state[wid].combiner_rgbadd_b, wid);
+    rebase_inputs(state[wid].combiner_alphasub_a, wid);
+    rebase_inputs(state[wid].combiner_alphasub_b, wid);
+    rebase_inputs(state[wid].combiner_alphamul, wid);
+    rebase_inputs(state[wid].combiner_alphaadd, wid);
+}
+
 static int32_t one_color = 0x100;
 static int32_t zero_color = 0x00;
 

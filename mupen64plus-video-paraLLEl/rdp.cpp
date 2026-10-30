@@ -3,6 +3,9 @@
 #include "Gfx #1.3.h"
 #include "parallel.h"
 #include "z64.h"
+#include "snapshot.hpp"
+#include "../libretro/rdp_snapshot.h"
+#include <cstring>
 #include <assert.h>
 
 using namespace Vulkan;
@@ -28,6 +31,7 @@ static QueryPoolHandle begin_ts, end_ts;
 
 static vector<retro_vulkan_image> retro_images;
 static vector<ImageHandle> retro_image_handles;
+static void snapshot_context_destroy();
 unsigned width, height;
 unsigned overscan;
 unsigned upscaling = 1;
@@ -248,12 +252,20 @@ bool init()
 		flags |= COMMAND_PROCESSOR_FLAG_SUPER_SAMPLED_DITHER_BIT;
 
 	log_cb(RETRO_LOG_INFO, "paraLLEl-RDP: Using RDRAM size of %u bytes.\n", rdram_size);
-	frontend.reset(new CommandProcessor(*device, reinterpret_cast<void *>(aligned_rdram),
+	try
+	{
+		frontend.reset(new CommandProcessor(*device, reinterpret_cast<void *>(aligned_rdram),
 				offset, rdram_size, rdram_size / 2, flags));
+	}
+	catch (const std::bad_alloc &)
+	{
+		log_cb(RETRO_LOG_ERROR, "paraLLEl-RDP: Could not allocate renderer resources.\n");
+		return false;
+	}
 
 	if (!frontend->device_is_supported())
 	{
-		log_cb(RETRO_LOG_ERROR, "This device probably does not support 8/16-bit storage. Make sure you're using up-to-date drivers!\n");
+		log_cb(RETRO_LOG_ERROR, "paraLLEl-RDP: Renderer initialization failed; check device capabilities and available memory.\n");
 		frontend.reset();
 		return false;
 	}
@@ -272,6 +284,7 @@ bool init()
 
 void deinit()
 {
+	snapshot_context_destroy();
 	begin_ts.reset();
 	end_ts.reset();
 	retro_image_handles.clear();
@@ -433,7 +446,16 @@ void complete_frame()
 
 	frontend->begin_frame_context();
 }
+
+#include "snapshot.inc"
 }
+
+extern "C" const struct rdp_snapshot_interface parallel_snapshot = {
+	RDP::snapshot_supported, RDP::snapshot_create, RDP::snapshot_release,
+	RDP::snapshot_valid, RDP::snapshot_flush, RDP::snapshot_save,
+	RDP::snapshot_prepare, RDP::snapshot_commit, RDP::snapshot_clear,
+	RDP::snapshot_failed
+};
 
 bool parallel_create_device(struct retro_vulkan_context *frontend_context, VkInstance instance, VkPhysicalDevice gpu,
                             VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr,

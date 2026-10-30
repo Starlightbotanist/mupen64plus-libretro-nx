@@ -27,6 +27,7 @@
 #include "list.h"
 
 #include <stdint.h>
+#include <stddef.h>
 
 #define ENTRY_BOOT 0
 #define ENTRY_VI 1
@@ -39,6 +40,10 @@ struct cheat_ctx
     struct SDL_mutex* mutex;
     struct list_head active_cheats;
 };
+
+size_t cheat_snapshot_size(const struct cheat_ctx* ctx);
+void cheat_snapshot_save(const struct cheat_ctx* ctx, void* data);
+void cheat_snapshot_load(struct cheat_ctx* ctx, const void* data);
 
 void cheat_apply_cheats(struct cheat_ctx* ctx, struct r4300_core* r4300, int entry);
 

@@ -63,7 +63,7 @@ void DepthBuffer::_initDepthImageTexture(FrameBuffer * _pBuffer, CachedTexture& 
 		params.internalFormat = fbTexFormat.depthImageInternalFormat;
 		params.format = fbTexFormat.depthImageFormat;
 		params.dataType = fbTexFormat.depthImageType;
-		gfxContext.init2DTexture(params);
+		gfxContext.initFramebufferTexture(&_cachedTexture, params);
 	}
 	{
 		Context::TexParameters params;
@@ -145,7 +145,7 @@ void DepthBuffer::_initDepthBufferTexture(const FrameBuffer * _pBuffer, CachedTe
 	initParams.internalFormat = fbTexFormat.depthInternalFormat;
 	initParams.format = fbTexFormat.depthFormat;
 	initParams.dataType = fbTexFormat.depthType;
-	gfxContext.init2DTexture(initParams);
+	gfxContext.initFramebufferTexture(_pTexture, initParams);
 
 	if (!_multisample) {
 		_pTexture->frameBufferTexture = CachedTexture::fbOneSample;

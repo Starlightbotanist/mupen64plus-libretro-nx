@@ -503,6 +503,7 @@ struct MicrocodeInfo
 
 struct GBIInfo
 {
+	friend class RendererSnapshot;
 	GBIFunc cmd[256];
 
 	u32 PCStackSize;

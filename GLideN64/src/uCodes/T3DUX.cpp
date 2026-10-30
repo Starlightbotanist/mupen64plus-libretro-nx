@@ -1,3 +1,4 @@
+#include "SnapshotState.h"
 #include "T3DUX.h"
 #include "N64.h"
 #include "RSP.h"
@@ -54,8 +55,10 @@ struct T3DUXTriN
 	u8	pal, v2tex, v1tex, v0tex; /* indexes in texture coords list */
 };
 
-static u32 t32uxSetTileW0 = 0;
-static u32 t32uxSetTileW1 = 0;
+static struct {
+	u32 setTileW0, setTileW1;
+} snapshotState = {};
+UcodeSnapshotBlock T3DUX_SnapshotState() { return ucodeSnapshotBlock(snapshotState); }
 
 static
 void T3DUX_ProcessRDP(u32 _cmds)
@@ -78,8 +81,8 @@ void T3DUX_ProcessRDP(u32 _cmds)
 				RDP.w3 = ((u32*)RDRAM)[addr++];
 				break;
 			case G_SETTILE:
-				t32uxSetTileW0 = w0;
-				t32uxSetTileW1 = w1;
+				snapshotState.setTileW0 = w0;
+				snapshotState.setTileW1 = w1;
 				break;
 			}
 		}
@@ -142,8 +145,8 @@ void T3DUX_LoadObject(u32 pstate, u32 pvtx, u32 ptri, u32 pcol)
 	GraphicsDrawer & drawer = dwnd().getDrawer();
 	const u32 coladdr = RSP_SegmentToPhysical(pcol);
 	const T3DUXTriN * tri = (const T3DUXTriN*)&RDRAM[RSP_SegmentToPhysical(ptri)];
-	u8 pal = _SHIFTR(t32uxSetTileW1, 20, 4);
-	t32uxSetTileW1 &= 0xFF0FFFFF;
+	u8 pal = _SHIFTR(snapshotState.setTileW1, 20, 4);
+	snapshotState.setTileW1 &= 0xFF0FFFFF;
 	const bool flatShading = (ostate->geommode & 0x0F) == 0;
 	const bool texturing = ostate->texmode != 1;
 	f32 flatr, flatg, flatb, flata;
@@ -152,13 +155,13 @@ void T3DUX_LoadObject(u32 pstate, u32 pvtx, u32 ptri, u32 pcol)
 	SPVertex * pVtx = drawer.getDMAVerticesData();
 	for (int t = 0; t < ostate->triCount; ++t, ++tri) {
 		if (texturing && tri->pal != 0) {
-			const u32 w1 = t32uxSetTileW1 | (tri->pal << 20);
+			const u32 w1 = snapshotState.setTileW1 | (tri->pal << 20);
 			const u32 newPal = _SHIFTR(w1, 20, 4);
 			if (pal != newPal) {
 				drawer.drawDMATriangles(static_cast<u32>(pVtx - drawer.getDMAVerticesData()));
 				pVtx = drawer.getDMAVerticesData();
 				pal = newPal;
-				RDP_SetTile(t32uxSetTileW0, w1);
+				RDP_SetTile(snapshotState.setTileW0, w1);
 			}
 		}
 

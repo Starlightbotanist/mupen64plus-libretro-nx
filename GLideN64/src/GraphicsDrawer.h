@@ -44,6 +44,7 @@ typedef std::chrono::milliseconds Milliseconds;
 
 class GraphicsDrawer
 {
+	friend class RendererSnapshot;
 public:
 	void addTriangle(u32 _v0, u32 _v1, u32 _v2);
 

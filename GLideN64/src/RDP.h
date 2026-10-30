@@ -9,6 +9,7 @@ typedef struct
 	u32 w0, w1, w2, w3;
 	u32 cmd_ptr;
 	u32 cmd_cur;
+	u32 lastLoadBlock[2];
 	u32 cmd_data[MAXCMD + 32];
 } RDPInfo;
 

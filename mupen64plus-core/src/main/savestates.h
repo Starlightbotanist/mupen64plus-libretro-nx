@@ -59,6 +59,11 @@ int savestates_load_m64p(struct device* dev, char *filepath);
 #else
 int savestates_save_m64p(const struct device* dev, void *data);
 int savestates_load_m64p(struct device* dev, const void *data);
+/* Direct process-local state I/O. Call only at a safe emulation boundary.
+ * The caller supplies the normal state-size buffer and a load workspace of
+ * at least 16788244 bytes. No emulation, allocation or savestate job occurs. */
+int savestates_save_snapshot(const struct device* dev, void *data);
+int savestates_load_snapshot(struct device* dev, const void *data, void *reserved);
 #endif
 
 #endif /* __SAVESTAVES_H__ */

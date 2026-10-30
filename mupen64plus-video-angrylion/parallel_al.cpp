@@ -16,7 +16,7 @@ class Parallel
 {
 public:
     Parallel(std::uint32_t num_workers) :
-        m_num_workers(std::min(num_workers, PARALLEL_MAX_WORKERS))
+        m_num_workers(std::max(1u, std::min(num_workers, PARALLEL_MAX_WORKERS)))
     {
         // mask for m_tasks_done when all workers have finished their task
         // except for worker 0, which runs in the main thread
@@ -31,8 +31,20 @@ public:
         start_work();
 
         // create worker threads
-        for (std::uint32_t worker_id = 1; worker_id < m_num_workers; worker_id++) {
-            m_workers.emplace_back(std::thread(&Parallel::do_work, this, worker_id));
+        try {
+            m_workers.reserve(m_num_workers - 1);
+            for (std::uint32_t worker_id = 1; worker_id < m_num_workers; worker_id++) {
+                m_workers.emplace_back(std::thread(&Parallel::do_work, this, worker_id));
+            }
+        } catch (...) {
+            {
+                std::unique_lock<std::mutex> ul(m_signal_mutex);
+                m_accept_work = false;
+                m_signal_work.notify_all();
+            }
+            for (auto& worker : m_workers)
+                worker.join();
+            throw;
         }
 
         // synchronize workers to prepare them for real tasks
@@ -116,7 +128,7 @@ private:
 
                 // take a break and wait for more work
                 m_signal_work.wait(ul, [worker_mask, this] {
-                    return (m_tasks_done & worker_mask) == 0;
+                    return !m_accept_work || (m_tasks_done & worker_mask) == 0;
                 });
             }
         }
@@ -159,6 +171,18 @@ void parallel_alinit(uint32_t num)
 void parallel_run(void task(uint32_t))
 {
     parallel->run(task);
+}
+
+bool parallel_reconfigure(uint32_t num)
+{
+    try {
+        // Construct before replacing the working pool. Its initial task is
+        // empty, so no renderer state is touched before publication.
+        parallel_alinit(num);
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 
 uint32_t parallel_num_workers(void)

@@ -12,9 +12,43 @@ extern "C" {
 	{
 		opengl::FunctionWrapper::commandLoop();
 	}
+
+	void gln64_thr_gl_snapshot_boundary(void)
+	{
+		opengl::FunctionWrapper::snapshotBoundary();
+	}
 }
 
 namespace opengl {
+
+#ifdef __LIBRETRO__
+	void FunctionWrapper::runOnContextThread(void (*callback)(void))
+	{
+		if (m_threaded_wrapper)
+			executeCommand(ContextCallbackCommand::get(callback));
+		else
+			callback();
+	}
+
+	void FunctionWrapper::snapshotBoundary()
+	{
+		executeCommand(SnapshotBoundaryCommand::get());
+	}
+
+	void SnapshotBoundaryCommand::commandToExecute()
+	{
+		/* This FIFO command follows the completed VI's graphics commands.
+		 * Its existing synchronous wait parks the emulation thread. While
+		 * the frontend owns the GL context, its snapshot calls run directly
+		 * instead of waiting on the command loop suspended here. */
+		const bool queued = FunctionWrapper::m_threaded_wrapper;
+		FunctionWrapper::m_threaded_wrapper = false;
+		mupen_snapshot_set_boundary(true);
+		co_switch(retro_thread);
+		mupen_snapshot_set_boundary(false);
+		FunctionWrapper::m_threaded_wrapper = queued;
+	}
+#endif
 
 	bool FunctionWrapper::m_threaded_wrapper = false;
 	bool FunctionWrapper::m_shutdown = false;
@@ -1161,20 +1195,23 @@ namespace opengl {
 	{
 		GLsync returnValue;
 
+		/* The fence must follow the work already queued on this context. */
 		if (m_threaded_wrapper)
-			executePriorityCommand(GlFenceSyncCommand::get(condition, flags, returnValue));
+			executeCommand(GlFenceSyncCommand::get(condition, flags, returnValue));
 		else
 			returnValue = ptrFenceSync(condition, flags);
 
 		return returnValue;
 	}
 
-	void FunctionWrapper::wrClientWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout)
+	GLenum FunctionWrapper::wrClientWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout)
 	{
+		GLenum returnValue;
 		if (m_threaded_wrapper)
-			executePriorityCommand(GlClientWaitSyncCommand::get(sync, flags, timeout));
+			executeCommand(GlClientWaitSyncCommand::get(sync, flags, timeout, returnValue));
 		else
-			ptrClientWaitSync(sync, flags, timeout);
+			returnValue = ptrClientWaitSync(sync, flags, timeout);
+		return returnValue;
 	}
 
 	void FunctionWrapper::wrDeleteSync(GLsync sync)
