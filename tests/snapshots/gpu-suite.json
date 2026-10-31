@@ -1,0 +1,21 @@
+{
+  "profile": "gpu.cfg",
+  "variants": [
+    {
+      "name": "gliden64-4x",
+      "driver": "glcore",
+      "options": {
+        "mupen64plus-rdp-plugin": "gliden64",
+        "mupen64plus-43screensize": "1280x960"
+      }
+    },
+    {
+      "name": "parallel-2x",
+      "driver": "vulkan",
+      "options": {
+        "mupen64plus-rdp-plugin": "parallel",
+        "mupen64plus-parallel-rdp-upscaling": "2x"
+      }
+    }
+  ]
+}

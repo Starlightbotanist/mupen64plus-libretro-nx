@@ -1,0 +1,10 @@
+{
+  "profile": "angrylion.cfg",
+  "variants": [
+    {"name": "cached-cxd4"},
+    {"name": "pure-cxd4", "options": {"mupen64plus-cpucore": "pure_interpreter"}},
+    {"name": "dynarec-cxd4", "options": {"mupen64plus-cpucore": "dynamic_recompiler"}},
+    {"name": "cached-parallel", "options": {"mupen64plus-rsp-plugin": "parallel"}},
+    {"name": "cached-cxd4-workers", "options": {"mupen64plus-angrylion-multithread": "2"}}
+  ]
+}
